@@ -1,16 +1,11 @@
 import { computeStandings } from "./scoring";
-import type { Game, PairingPlan, Player } from "@/types";
+import type { Game, PairingPlan, Player, ColorState, PairGroupResult, PairSearchOptions } from "@/types";
 
 const INF = 100_000;
 const REPEAT_PENALTY = 10;
 // Small pools are searched exhaustively; large ones get a best-effort budget,
 // since a valid pairing is what matters when brackets merge.
 const searchBudget = (n: number) => (n <= 16 ? 300_000 : 10_000);
-
-type ColorState = {
-  diff: number;
-  lastColors: ("w" | "b")[];
-};
 
 function colorState(playerId: number, games: Game[]): ColorState {
   let diff = 0;
@@ -76,18 +71,6 @@ function bestOrientation(
   if (opt1 <= opt2) return { whiteId: a, blackId: b, penalty: opt1, ok: true };
   return { whiteId: b, blackId: a, penalty: opt2, ok: true };
 }
-
-type PairGroupResult = {
-  pairs: { whiteId: number; blackId: number; penalty: number }[];
-  floater: number | null;
-  allowRepeats: boolean;
-  colorRelaxed: boolean;
-};
-
-type PairSearchOptions = {
-  allowRepeats: boolean;
-  strictColors: boolean;
-};
 
 function pairGroup(
   players: number[],

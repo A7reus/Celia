@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { simulateAction } from "@/lib/actions";
-import type { SimulationResult } from "@/lib/actions";
+import type { SimulationResult } from "@/types";
 import { StandingsTable } from "@/components/standings-table";
 
 export function SimulateButton() {

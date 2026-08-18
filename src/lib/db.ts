@@ -4,18 +4,23 @@ import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import fs from "node:fs";
 import { randomBytes, scryptSync } from "node:crypto";
-import type { Game, GameResult, PairingRow, Player, RatingType, RoundRow, RoundStatus } from "@/types";
+import type {
+  Game,
+  GameResult,
+  PairingRow,
+  Player,
+  RatingType,
+  RoundRow,
+  RoundStatus,
+  Settings,
+  Row,
+  DbHandle,
+  PlayerRow,
+  PairingRowRaw,
+  GameRow
+} from "@/types";
 
 const DEFAULT_PASSWORD = "admin";
-
-export type Settings = {
-  tournamentName: string;
-  timeControl: string;
-  roundsCount: number;
-  defaultRating: number;
-  adminPasswordHash: string;
-  sessionSecret: string;
-};
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -61,16 +66,6 @@ function hashPassword(password: string): string {
 }
 
 // ---------- database handle (remote Turso, local file fallback) ----------
-
-type Row = Record<string, unknown>;
-
-interface DbHandle {
-  all(sql: string, args?: (string | number | null)[]): Promise<Row[]>;
-  get(sql: string, args?: (string | number | null)[]): Promise<Row | undefined>;
-  run(sql: string, args?: (string | number | null)[]): Promise<{ lastInsertRowid: number }>;
-  exec(sql: string): Promise<void>;
-  batch(stmts: InStatement[]): Promise<void>;
-}
 
 function remoteHandle(url: string, token: string): DbHandle {
   const client = createClient({ url, authToken: token });
@@ -210,14 +205,6 @@ export { hashPassword };
 
 // ---------- players ----------
 
-type PlayerRow = {
-  id: number;
-  name: string;
-  rating: number;
-  rating_type: RatingType;
-  active: number;
-};
-
 function toPlayer(row: PlayerRow): Player {
   return { id: row.id, name: row.name, rating: row.rating, ratingType: row.rating_type, active: row.active };
 }
@@ -332,17 +319,6 @@ export async function setRoundStatus(roundId: number, status: RoundStatus): Prom
   await db.run("UPDATE rounds SET status = ? WHERE id = ?", [status, roundId]);
 }
 
-type PairingRowRaw = {
-  id: number;
-  round_id: number;
-  board: number;
-  white_id: number | null;
-  black_id: number | null;
-  result: string | null;
-  is_bye: number;
-  bye_for_id: number | null;
-};
-
 function toPairing(row: PairingRowRaw): PairingRow {
   return {
     id: row.id,
@@ -409,15 +385,6 @@ export async function currentPublicRound(): Promise<RoundRow | null> {
   const rounds = (await listRounds()).filter((r) => r.status !== "draft");
   return rounds.length > 0 ? rounds[rounds.length - 1] : null;
 }
-
-export type GameRow = {
-  round: number;
-  white_id: number | null;
-  black_id: number | null;
-  result: string | null;
-  is_bye: number;
-  bye_for_id: number | null;
-};
 
 export async function allGames(): Promise<Game[]> {
   const db = await getDb();

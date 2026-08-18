@@ -1,4 +1,4 @@
-import type { Game, GameResult, Player, Standing, StandingWithRank } from "@/types";
+import type { Game, GameResult, Player, Standing, StandingWithRank, PlayerAgg } from "@/types";
 
 export const REAL_RESULTS: GameResult[] = ["1-0", "0-1", "1/2"];
 
@@ -16,21 +16,6 @@ function pointsForPlayer(result: GameResult, isWhite: boolean): number {
       return isWhite ? 0 : 1;
   }
 }
-
-type PlayerAgg = {
-  score: number;
-  wins: number;
-  draws: number;
-  losses: number;
-  byes: number;
-  played: number;
-  opponents: { id: number; score: number; real: boolean }[];
-  realOpponentIds: number[];
-  oppRatings: number[];
-  whiteCount: number;
-  blackCount: number;
-  games: Standing["games"];
-};
 
 export function computeStandings(players: Player[], games: Game[]): StandingWithRank[] {
   const agg = new Map<number, PlayerAgg>();

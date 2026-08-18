@@ -1,15 +1,8 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import type { PairingRow, Player } from "@/types";
+import type { Board, PairingRow, Player } from "@/types";
 import { savePairingsAction } from "@/lib/actions";
-
-type Board = {
-  whiteId: number | null;
-  blackId: number | null;
-  isBye: boolean;
-  byeForId: number | null;
-};
 
 export function PairingEditor({
   roundId,

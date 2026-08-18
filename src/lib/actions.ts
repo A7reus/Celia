@@ -37,7 +37,7 @@ import {
 } from "./auth";
 import { pairRound, validatePlan } from "./pairing";
 import { computeStandings } from "./scoring";
-import type { GameResult, PairingPlan, RatingType, StandingWithRank } from "@/types";
+import type { GameResult, PairingPlan, RatingType, SimulationResult } from "@/types";
 
 function revalidateAll() {
   for (const path of ["/", "/pairings", "/results", "/admin", "/admin/players", "/admin/settings"]) {
@@ -369,11 +369,6 @@ export async function changePasswordAction(formData: FormData): Promise<{ error?
 }
 
 // ---------- simulation ----------
-
-export type SimulationResult = {
-  standings: StandingWithRank[];
-  rounds: number;
-};
 
 function simulateResult(whiteRating: number, blackRating: number, seed: number): GameResult {
   // Deterministic pseudo-random weighted by rating difference
