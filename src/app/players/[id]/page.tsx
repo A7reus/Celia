@@ -87,36 +87,38 @@ export default async function PlayerPage({ params }: PageProps<"/players/[id]">)
       <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 px-4 py-2 text-sm font-medium text-slate-700 ">Games</div>
         {standing && standing.games.length > 0 ? (
-          <table className="w-full text-sm">
-            <tbody>
-              {standing.games.map((g) => (
-                <tr key={g.round} className="border-b border-slate-100 last:border-0">
-                  <td className="py-2.5 pl-4 w-14 text-slate-400 ">R{g.round}</td>
-                  <td className="py-2.5 w-8 text-slate-400 text-center">
-                    {g.isBye ? "·" : g.color === "w" ? "W" : "B"}
-                  </td>
-                  <td className="py-2.5">
-                    {g.isBye ? (
-                      <span className="inline-flex rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700 ">
-                        Bye
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[400px]">
+              <tbody>
+                {standing.games.map((g) => (
+                  <tr key={g.round} className="border-b border-slate-100 last:border-0">
+                    <td className="py-2.5 pl-4 w-14 text-slate-400 ">R{g.round}</td>
+                    <td className="py-2.5 w-8 text-slate-400 text-center">
+                      {g.isBye ? "·" : g.color === "w" ? "W" : "B"}
+                    </td>
+                    <td className="py-2.5">
+                      {g.isBye ? (
+                        <span className="inline-flex rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700 ">
+                          Bye
+                        </span>
+                      ) : (
+                        <Link href={`/players/${g.opponentId}`} className="hover:text-indigo-600">
+                          {g.opponentName ?? "?"}
+                        </Link>
+                      )}
+                    </td>
+                    <td className="py-2.5 pr-4 text-right">
+                      <span
+                        className={`inline-block min-w-9 rounded px-1.5 py-0.5 text-xs font-semibold tabular-nums ${playerResultCellClass(g.result, g.color)}`}
+                      >
+                        {playerResultShort(g.result, g.color)}
                       </span>
-                    ) : (
-                      <Link href={`/players/${g.opponentId}`} className="hover:text-indigo-600">
-                        {g.opponentName ?? "?"}
-                      </Link>
-                    )}
-                  </td>
-                  <td className="py-2.5 pr-4 text-right">
-                    <span
-                      className={`inline-block min-w-9 rounded px-1.5 py-0.5 text-xs font-semibold tabular-nums ${playerResultCellClass(g.result, g.color)}`}
-                    >
-                      {playerResultShort(g.result, g.color)}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : (
           <div className="px-4 py-6 text-center text-sm text-slate-500 ">No games yet.</div>
         )}
