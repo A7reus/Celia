@@ -25,10 +25,18 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex-col bg-slate-50 text-slate-900">
         <SiteHeader />
         <main className="flex-1 w-full max-w-5xl mx-auto px-4 py-6">{children}</main>
-        <footer className="w-full border-t border-slate-200 bg-white ">
+        <footer className="w-full border-t border-slate-200 bg-white">
           <div className="max-w-5xl mx-auto px-4 py-3 text-xs text-slate-500 flex flex-wrap justify-between gap-x-4 gap-y-1">
             <span>Rapid · 10+5</span>
             <span>Swiss system · 7 rounds</span>
+            <a
+              href="https://github.com/A7reus/JUCSE-Intradepartment-Chess-Tournament"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-slate-700"
+            >
+              GitHub
+            </a>
           </div>
         </footer>
       </body>
