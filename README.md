@@ -12,7 +12,7 @@ A small self-hosted Swiss-system chess tournament manager: pair rounds, publish 
 - Manual/FIDE ratings, optional inactive players, fixed number of rounds
 - Admin area (password-protected; default password `admin` on a fresh database, change it in Settings)
 - Login rate limiting and optional IP allowlist
-- Light/dark theme, responsive tables
+- Light theme, responsive tables
 - Deterministic pairing engine (no randomness), covered by unit tests
 
 ## Requirements
@@ -46,11 +46,13 @@ If you want to develop against the same database you'll use in production, creat
 ## Commands
 
 ```bash
-pnpm dev     # development server
-pnpm build   # production build
-pnpm start   # run the production build
-pnpm test    # engine + scoring + rate-limit tests (vitest)
-pnpm lint    # oxlint
+pnpm dev           # development server
+pnpm build         # production build
+pnpm start         # run the production build
+pnpm test          # engine + scoring + rate-limit tests (vitest)
+pnpm lint          # oxlint
+pnpm format        # format all files with Prettier
+pnpm format:check  # verify formatting (CI)
 ```
 
 ## How the tournament works
@@ -100,19 +102,21 @@ Standings are computed from all completed rounds.
 src/
   app/               Next.js App Router pages (server components)
     page.tsx         standings (crosstable with per-round results)
+    not-found.tsx    custom 404 page
     pairings/        latest published round + per-round pairing pages
     results/         results of completed rounds
     players/[id]/    individual player page (stats, game history)
     admin/           login, dashboard, players, settings, simulation
     admin/(protected)/rounds/[n]/  pairing editor + results form
-  components/        tables, forms, status pills, theme toggle
+  components/        tables, forms, status pills, buttons
   lib/
     db.ts            database adapter (Turso remote / SQLite fallback)
-    types.ts         shared types (type aliases only)
     pairing.ts       the pairing engine (pure, deterministic)
     scoring.ts       standings, tie-breaks, TPR (pure)
     auth.ts          password hashing, sessions, login rate limiting
     actions.ts       server actions (all writes go through these)
+  types/             shared types (type aliases only)
+  tests/             vitest tests (pairing engine, scoring, rate limiting)
 ```
 
 - **Server components** fetch data and render; all state changes happen through **server actions** (`src/lib/actions.ts`), which revalidate affected routes after every write.
@@ -151,11 +155,10 @@ The handle is cached per process. Because all queries go through the same interf
 - **Standings table** shows a crosstable: each round cell displays the player's own result, colored green (win) / amber (draw) / red (loss).
 - **Pairing editor** (admin) lets you swap players between boards before publishing; **regenerate** validates the plan and produces a fresh one with warnings.
 - **Forms** use `useActionState`: `ActionForm` renders server-action errors and success messages; destructive actions use `ConfirmSubmitButton` (confirm dialog + pending state).
-- **Theme toggle** persists to `localStorage`, honors the OS preference, and applies the class before hydration to avoid a flash.
 
 ### Tests
 
-`src/lib/engine.test.ts` (vitest): pairing invariants over 7 rounds for 8-40 players (colors, rematches, byes), round-1 pairing shape, bye assignment, hand-verified standings (Buchholz, TPR, bye scoring, head-to-head). `src/lib/rate-limit.test.ts`: lockout behavior against an isolated temp database.
+`src/tests/engine.test.ts` (vitest): pairing invariants over 7 rounds for 8-40 players (colors, rematches, byes), round-1 pairing shape, bye assignment, hand-verified standings (Buchholz, TPR, bye scoring, head-to-head). `src/tests/rate-limit.test.ts`: lockout behavior against an isolated temp database.
 
 ## Deployment
 
