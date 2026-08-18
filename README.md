@@ -153,6 +153,7 @@ The handle is cached per process. Because all queries go through the same interf
 ### UI patterns
 
 - **Standings table** shows a crosstable: each round cell displays the player's own result, colored green (win) / amber (draw) / red (loss).
+- **Loading indicators**: `loading.tsx` boundaries at the root and the dynamic segments (`pairings/[round]`, `players/[id]`, admin rounds) show an instant spinner while the next page streams in, so every navigation gives feedback.
 - **Pairing editor** (admin) lets you swap players between boards before publishing; **regenerate** validates the plan and produces a fresh one with warnings.
 - **Forms** use `useActionState`: `ActionForm` renders server-action errors and success messages; destructive actions use `ConfirmSubmitButton` (confirm dialog + pending state).
 
