@@ -149,11 +149,14 @@ export async function requireTournamentAccess(tournamentId: number): Promise<Adm
 
 export async function setAdminSession(adminId: number, isSuper: boolean): Promise<void> {
   const store = await cookies();
+  const h = await headers();
+  const proto = h.get("x-forwarded-proto") ?? "http";
   store.set(SESSION_COOKIE, createSessionToken(await getSessionSecret(), adminId, isSuper), {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
-    maxAge: SESSION_TTL_SECONDS
+    maxAge: SESSION_TTL_SECONDS,
+    secure: proto === "https"
   });
 }
 

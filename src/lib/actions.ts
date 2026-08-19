@@ -203,6 +203,7 @@ export async function createTournamentAction(formData: FormData): Promise<{ erro
   }
   if (!Number.isFinite(defaultRating) || defaultRating < 0) return { error: "Invalid default rating" };
   if (adminId != null && !Number.isInteger(adminId)) return { error: "Invalid admin" };
+  if (adminId != null && !(await getAdminById(adminId))) return { error: "Account not found" };
   try {
     await createTournament({
       name,
@@ -228,10 +229,9 @@ export async function updateTournamentAction(formData: FormData): Promise<{ erro
   if (!Number.isInteger(tournamentId)) return { error: "Invalid tournament" };
   const tournament = await getTournament(tournamentId);
   if (!tournament) return { error: "Tournament not found" };
-  const patch: { name?: string; slug?: string; type?: TournamentType } = {};
+  const patch: { name?: string; type?: TournamentType } = {};
   if (name && name !== tournament.name) {
     patch.name = name;
-    patch.slug = slugFromName(name);
   }
   if (type && ["intradept", "interdept", "other"].includes(type) && type !== tournament.type) {
     patch.type = type;
@@ -241,7 +241,7 @@ export async function updateTournamentAction(formData: FormData): Promise<{ erro
   } catch {
     return { error: "A tournament with that name already exists" };
   }
-  revalidateAll(patch.slug ?? tournament.slug);
+  revalidateAll(tournament.slug);
   revalidatePath(`/admin/${tournament.slug}`);
   return {};
 }

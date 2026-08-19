@@ -417,18 +417,14 @@ export async function createTournament(input: TournamentUpsert): Promise<number>
   return Number(result.lastInsertRowid);
 }
 
-export async function updateTournament(
-  id: number,
-  patch: { name?: string; slug?: string; type?: Tournament["type"] }
-): Promise<void> {
+export async function updateTournament(id: number, patch: { name?: string; type?: Tournament["type"] }): Promise<void> {
   const db = await getDb();
   await db.run(
     `UPDATE tournaments SET
        name = COALESCE(?, name),
-       slug = COALESCE(?, slug),
        type = COALESCE(?, type)
      WHERE id = ?`,
-    [patch.name?.trim() ?? null, patch.slug?.trim().toLowerCase() ?? null, patch.type ?? null, id]
+    [patch.name?.trim() ?? null, patch.type ?? null, id]
   );
 }
 
@@ -533,11 +529,12 @@ export async function setPlayerActive(tournamentId: number, id: number, active: 
 
 export async function playerHasGames(tournamentId: number, playerId: number): Promise<boolean> {
   const db = await getDb();
-  const row = (await db.get("SELECT COUNT(*) AS n FROM pairings WHERE white_id = ? OR black_id = ? OR bye_for_id = ?", [
-    playerId,
-    playerId,
-    playerId
-  ])) as unknown as { n: number };
+  const row = (await db.get(
+    `SELECT COUNT(*) AS n FROM pairings p
+     JOIN rounds r ON r.id = p.round_id
+     WHERE r.tournament_id = ? AND (p.white_id = ? OR p.black_id = ? OR p.bye_for_id = ?)`,
+    [tournamentId, playerId, playerId, playerId]
+  )) as unknown as { n: number };
   return row.n > 0;
 }
 
