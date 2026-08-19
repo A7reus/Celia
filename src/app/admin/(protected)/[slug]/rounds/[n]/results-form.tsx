@@ -14,10 +14,12 @@ const OPTIONS: { value: GameResult; label: string }[] = [
 
 export function ResultsForm({
   roundId,
+  tournamentId,
   pairings,
   names
 }: {
   roundId: number;
+  tournamentId: number;
   pairings: PairingRow[];
   names: Map<number, string>;
 }) {
@@ -32,6 +34,7 @@ export function ResultsForm({
     setSaving(true);
     setMessage(null);
     const form = new FormData();
+    form.set("tournament_id", String(tournamentId));
     form.set("round_id", String(roundId));
     form.set("results", JSON.stringify(results));
     const result = await saveResultsAction(form);

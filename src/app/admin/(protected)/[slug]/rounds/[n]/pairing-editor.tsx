@@ -6,10 +6,12 @@ import { savePairingsAction } from "@/lib/actions";
 
 export function PairingEditor({
   roundId,
+  tournamentId,
   initialPairings,
   players
 }: {
   roundId: number;
+  tournamentId: number;
   initialPairings: PairingRow[];
   players: Player[];
 }) {
@@ -127,6 +129,7 @@ export function PairingEditor({
           </button>
           {state?.error && <span className="text-xs text-amber-700 ">{state.error}</span>}
           <form action={formAction} className="ml-auto">
+            <input type="hidden" name="tournament_id" value={tournamentId} />
             <input type="hidden" name="round_id" value={roundId} />
             <button
               type="submit"

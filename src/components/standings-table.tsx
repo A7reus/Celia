@@ -2,7 +2,15 @@ import Link from "next/link";
 import type { StandingWithRank } from "@/types";
 import { playerResultShort, playerResultCellClass, scoreFmt } from "./results";
 
-export function StandingsTable({ standings, roundCount }: { standings: StandingWithRank[]; roundCount: number }) {
+export function StandingsTable({
+  standings,
+  roundCount,
+  slug
+}: {
+  standings: StandingWithRank[];
+  roundCount: number;
+  slug: string;
+}) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm min-w-[560px]">
@@ -44,7 +52,10 @@ export function StandingsTable({ standings, roundCount }: { standings: StandingW
               <tr key={s.playerId} className="border-b border-slate-100 hover:bg-white ">
                 <td className="py-2.5 pl-4 pr-2 text-slate-400 tabular-nums">{s.rank}</td>
                 <td className="py-2.5 pr-2">
-                  <Link href={`/players/${s.playerId}`} className="font-medium text-slate-800 hover:text-indigo-600">
+                  <Link
+                    href={`/${slug}/players/${s.playerId}`}
+                    className="font-medium text-slate-800 hover:text-indigo-600"
+                  >
                     {s.name}
                   </Link>
                 </td>

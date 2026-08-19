@@ -5,10 +5,12 @@ import { resultText, resultCellClass } from "./results";
 export function PairingTable({
   pairings,
   names,
+  slug,
   showResultColumn = true
 }: {
   pairings: PairingRow[];
   names: Map<number, string>;
+  slug: string;
   showResultColumn?: boolean;
 }) {
   return (
@@ -24,7 +26,7 @@ export function PairingTable({
                   <td className="py-2.5 w-8 text-slate-400 " />
                   <td className="py-2.5 w-1/4 break-words">
                     {name ? (
-                      <Link href={`/players/${p.byeForId}`} className="text-slate-700 hover:text-indigo-600">
+                      <Link href={`/${slug}/players/${p.byeForId}`} className="text-slate-700 hover:text-indigo-600">
                         {name}
                       </Link>
                     ) : (
@@ -47,7 +49,10 @@ export function PairingTable({
                 <td className="py-2.5 w-8 text-slate-400 text-center">W</td>
                 <td className="py-2.5 w-1/4 break-words">
                   {white ? (
-                    <Link href={`/players/${p.whiteId}`} className="font-medium text-slate-800 hover:text-indigo-600">
+                    <Link
+                      href={`/${slug}/players/${p.whiteId}`}
+                      className="font-medium text-slate-800 hover:text-indigo-600"
+                    >
                       {white}
                     </Link>
                   ) : (
@@ -67,7 +72,10 @@ export function PairingTable({
                 </td>
                 <td className="py-2.5 w-1/4 break-words text-right">
                   {black ? (
-                    <Link href={`/players/${p.blackId}`} className="font-medium text-slate-800 hover:text-indigo-600">
+                    <Link
+                      href={`/${slug}/players/${p.blackId}`}
+                      className="font-medium text-slate-800 hover:text-indigo-600"
+                    >
                       {black}
                     </Link>
                   ) : (

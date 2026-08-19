@@ -1,13 +1,19 @@
-import { getSettings, listPlayers } from "@/lib/db";
+import { notFound } from "next/navigation";
+import { getTournamentBySlug, listPlayers } from "@/lib/db";
+import { requireTournamentAccess } from "@/lib/auth";
 import { addPlayerAction } from "@/lib/actions";
 import { ActionForm } from "@/components/action-form";
 import { PlayerRow } from "./player-row";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminPlayersPage() {
-  const players = await listPlayers(true);
-  const defaultRating = (await getSettings()).defaultRating;
+export default async function TournamentAdminPlayersPage({ params }: PageProps<"/admin/[slug]/players">) {
+  const { slug } = await params;
+  const tournament = await getTournamentBySlug(slug);
+  if (!tournament) notFound();
+  await requireTournamentAccess(tournament.id);
+
+  const players = await listPlayers(tournament.id, true);
 
   return (
     <div className="space-y-4">
@@ -19,6 +25,7 @@ export default async function AdminPlayersPage() {
           successMessage="Player added."
           className="grid-cols-1 gap-3 p-4 sm:grid-cols-[1fr_7rem_8rem_auto]"
         >
+          <input type="hidden" name="tournament_id" value={tournament.id} />
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1" htmlFor="name">
               Name
@@ -39,7 +46,7 @@ export default async function AdminPlayersPage() {
               id="rating"
               name="rating"
               type="number"
-              defaultValue={defaultRating}
+              defaultValue={tournament.defaultRating}
               className="w-full rounded-md border-slate-300 px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
@@ -76,7 +83,7 @@ export default async function AdminPlayersPage() {
         ) : (
           <div className="divide-y divide-slate-100 ">
             {players.map((p) => (
-              <PlayerRow key={p.id} player={p} />
+              <PlayerRow key={p.id} player={p} tournamentId={tournament.id} />
             ))}
           </div>
         )}

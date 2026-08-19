@@ -1,17 +1,22 @@
 import Link from "next/link";
-import { listRounds, listPairings, playerNameMap } from "@/lib/db";
+import { notFound } from "next/navigation";
+import { getTournamentBySlug, listPairings, listRounds, playerNameMap } from "@/lib/db";
 import { PairingTable } from "@/components/pairing-table";
-import { roundStatusLabel } from "../pairings/round-status";
+import { roundStatusLabel } from "@/lib/round-status";
 
 export const dynamic = "force-dynamic";
 
-export default async function ResultsPage() {
-  const rounds = (await listRounds()).filter((r) => r.status !== "draft");
-  const names = await playerNameMap();
+export default async function ResultsPage({ params }: PageProps<"/[slug]/results">) {
+  const { slug } = await params;
+  const tournament = await getTournamentBySlug(slug);
+  if (!tournament) notFound();
+
+  const rounds = (await listRounds(tournament.id)).filter((r) => r.status !== "draft");
+  const names = await playerNameMap(tournament.id);
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold">Results</h1>
+      <h2 className="text-lg font-semibold">Results</h2>
       {rounds.length === 0 ? (
         <div className="rounded-lg border-dashed border border-slate-300 bg-white p-8 text-center text-sm text-slate-500 ">
           No finished rounds yet.
@@ -27,14 +32,14 @@ export default async function ResultsPage() {
                   {round.status === "published" ? "In progress" : "Finished"}
                 </span>
               </div>
-              <PairingTable pairings={pairings} names={names} />
+              <PairingTable pairings={pairings} names={names} slug={tournament.slug} />
             </div>
           );
         })
       )}
       <p className="text-xs text-slate-400 ">
         Looking for a specific round?{" "}
-        <Link href="/pairings" className="text-indigo-600 hover:underline">
+        <Link href={`/${tournament.slug}/pairings`} className="text-indigo-600 hover:underline">
           Go to pairings
         </Link>
         .

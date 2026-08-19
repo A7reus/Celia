@@ -1,24 +1,27 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { allGames, getPlayer, listPlayers, getSettings } from "@/lib/db";
+import { allGames, getPlayer, getTournamentBySlug, listPlayers } from "@/lib/db";
 import { computeStandings } from "@/lib/scoring";
 import { playerResultShort, playerResultCellClass, scoreFmt } from "@/components/results";
 
 export const dynamic = "force-dynamic";
 
-export default async function PlayerPage({ params }: PageProps<"/players/[id]">) {
-  const { id: idParam } = await params;
+export default async function PlayerPage({ params }: PageProps<"/[slug]/players/[id]">) {
+  const { slug, id: idParam } = await params;
   const id = Number(idParam);
   if (!Number.isInteger(id)) notFound();
-  const player = await getPlayer(id);
+
+  const tournament = await getTournamentBySlug(slug);
+  if (!tournament) notFound();
+
+  const player = await getPlayer(tournament.id, id);
   if (!player) notFound();
 
-  const players = await listPlayers();
-  const games = await allGames();
+  const players = await listPlayers(tournament.id);
+  const games = await allGames(tournament.id);
   const standings = computeStandings(players, games);
   const standing = standings.find((s) => s.playerId === id);
   const rank = standings.findIndex((s) => s.playerId === id) + 1;
-  const settings = await getSettings();
 
   return (
     <div className="space-y-4">
@@ -102,7 +105,7 @@ export default async function PlayerPage({ params }: PageProps<"/players/[id]">)
                           Bye
                         </span>
                       ) : (
-                        <Link href={`/players/${g.opponentId}`} className="hover:text-indigo-600">
+                        <Link href={`/${tournament.slug}/players/${g.opponentId}`} className="hover:text-indigo-600">
                           {g.opponentName ?? "?"}
                         </Link>
                       )}
@@ -125,7 +128,7 @@ export default async function PlayerPage({ params }: PageProps<"/players/[id]">)
       </div>
 
       <p className="text-xs text-slate-400 ">
-        Time control: {settings.timeControl} · {settings.roundsCount} rounds Swiss system.
+        Time control: {tournament.timeControl} · {tournament.roundsCount} rounds Swiss system.
       </p>
     </div>
   );

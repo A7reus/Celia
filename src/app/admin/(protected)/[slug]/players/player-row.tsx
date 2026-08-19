@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { Player } from "@/types";
 import { updatePlayerAction, togglePlayerActiveAction, deletePlayerAction } from "@/lib/actions";
 
-export function PlayerRow({ player }: { player: Player }) {
+export function PlayerRow({ player, tournamentId }: { player: Player; tournamentId: number }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(player.name);
   const [rating, setRating] = useState(String(player.rating));
@@ -16,6 +16,7 @@ export function PlayerRow({ player }: { player: Player }) {
     setSaving(true);
     setError(null);
     const form = new FormData();
+    form.set("tournament_id", String(tournamentId));
     form.set("id", String(player.id));
     form.set("name", name);
     form.set("rating", rating);
@@ -34,8 +35,19 @@ export function PlayerRow({ player }: { player: Player }) {
     if (!window.confirm(`Delete ${player.name}? This cannot be undone.`)) return;
     setError(null);
     const form = new FormData();
+    form.set("tournament_id", String(tournamentId));
     form.set("id", String(player.id));
     const result = await deletePlayerAction(form);
+    if (result.error) setError(result.error);
+  }
+
+  async function toggle() {
+    setError(null);
+    const form = new FormData();
+    form.set("tournament_id", String(tournamentId));
+    form.set("id", String(player.id));
+    form.set("active", String(player.active));
+    const result = await togglePlayerActiveAction(form);
     if (result.error) setError(result.error);
   }
 
@@ -101,20 +113,16 @@ export function PlayerRow({ player }: { player: Player }) {
             >
               Edit
             </button>
-            <form action={togglePlayerActiveAction}>
-              <input type="hidden" name="id" value={player.id} />
-              <input type="hidden" name="active" value={player.active} />
-              <button
-                type="submit"
-                className={`rounded-md px-2.5 py-1 text-xs border cursor-pointer ${
-                  player.active
-                    ? "border-amber-300 text-amber-700 hover:bg-amber-50 "
-                    : "border-emerald-300 text-emerald-700 hover:bg-emerald-50 "
-                }`}
-              >
-                {player.active ? "Deactivate" : "Activate"}
-              </button>
-            </form>
+            <button
+              onClick={toggle}
+              className={`rounded-md px-2.5 py-1 text-xs border cursor-pointer ${
+                player.active
+                  ? "border-amber-300 text-amber-700 hover:bg-amber-50 "
+                  : "border-emerald-300 text-emerald-700 hover:bg-emerald-50 "
+              }`}
+            >
+              {player.active ? "Deactivate" : "Activate"}
+            </button>
             <button
               onClick={remove}
               className="rounded-md border-rose-300 px-2.5 py-1 text-xs text-rose-600 hover:bg-rose-50 cursor-pointer"

@@ -6,14 +6,20 @@ import {
   addPlayer,
   allGames,
   createRound,
+  createTournament,
+  deleteAdmin,
   deletePlayer,
   deleteRound,
+  deleteTournament,
+  getAdminById,
+  getAdminByUsername,
   getPlayer,
   getRound,
-  getSettings,
+  getTournament,
   listPlayers,
   listRounds,
   listPairings,
+  listTournaments,
   nextRoundNumber,
   playerHasGames,
   resetTournament,
@@ -21,30 +27,66 @@ import {
   setPairingResult,
   setPlayerActive,
   setRoundStatus,
-  setSetting,
-  updatePlayer
+  setTournamentAdmin,
+  setTournamentStatus,
+  updateAdminPassword,
+  updatePlayer,
+  updateTournament,
+  updateTournamentSettings,
+  countSuperAdmins,
+  createAdmin
 } from "./db";
 import {
-  changeAdminPassword,
   clearAdminSession,
   clearLoginFailures,
+  currentAdmin,
   getClientIp,
+  hashPassword,
   loginLockout,
   recordLoginFailure,
   requireAdmin,
+  requireSuperAdmin,
   setAdminSession,
   verifyPassword
 } from "./auth";
 import { pairRound, validatePlan } from "./pairing";
 import { computeStandings } from "./scoring";
-import type { GameResult, PairingPlan, RatingType, SimulationResult } from "@/types";
+import type {
+  GameResult,
+  PairingPlan,
+  RatingType,
+  SimulationResult,
+  Tournament,
+  TournamentStatus,
+  TournamentType
+} from "@/types";
 
-function revalidateAll() {
-  for (const path of ["/", "/pairings", "/results", "/admin", "/admin/players", "/admin/settings"]) {
-    revalidatePath(path);
-  }
-  revalidatePath("/admin/rounds/[n]", "page");
-  revalidatePath("/players/[id]", "page");
+function revalidateAll(slug: string) {
+  revalidatePath("/");
+  revalidatePath(`/${slug}`);
+  revalidatePath(`/${slug}/standings`);
+  revalidatePath(`/${slug}/pairings`);
+  revalidatePath(`/${slug}/pairings/[round]`, "page");
+  revalidatePath(`/${slug}/results`);
+  revalidatePath(`/${slug}/players/[id]`, "page");
+  revalidatePath(`/admin`);
+  revalidatePath(`/admin/${slug}`);
+  revalidatePath(`/admin/${slug}/players`);
+  revalidatePath(`/admin/${slug}/settings`);
+  revalidatePath(`/admin/${slug}/rounds/[n]`, "page");
+}
+
+// ---------- access control ----------
+
+async function tournamentAccess(formData: FormData): Promise<{ tournament: Tournament } | { error: string }> {
+  const tournamentId = Number(formData.get("tournament_id"));
+  if (!Number.isInteger(tournamentId)) return { error: "Invalid tournament" };
+  const tournament = await getTournament(tournamentId);
+  if (!tournament) return { error: "Tournament not found" };
+  const admin = await currentAdmin();
+  if (!admin) return { error: "Not signed in" };
+  if (!admin.isSuper && tournament.adminId !== admin.id) return { error: "Not authorized" };
+  return { tournament };
 }
 
 // ---------- auth ----------
@@ -53,6 +95,7 @@ export async function loginAction(
   prevState: { error?: string } | null,
   formData: FormData
 ): Promise<{ error?: string }> {
+  const username = String(formData.get("username") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   const ip = await getClientIp();
 
@@ -75,13 +118,13 @@ export async function loginAction(
     }
   }
 
-  const settings = await getSettings();
-  if (!(await verifyPassword(password, settings.adminPasswordHash))) {
+  const admin = await getAdminByUsername(username);
+  if (!admin || !(await verifyPassword(password, admin.passwordHash))) {
     if (ip) await recordLoginFailure(ip);
-    return { error: "Invalid password" };
+    return { error: "Invalid username or password" };
   }
   if (ip) await clearLoginFailures(ip);
-  await setAdminSession();
+  await setAdminSession(admin.id, admin.isSuper);
   redirect("/admin");
 }
 
@@ -90,85 +133,258 @@ export async function logoutAction(): Promise<void> {
   redirect("/admin/login");
 }
 
+// ---------- super admin: accounts & tournaments ----------
+
+export async function createAdminAction(formData: FormData): Promise<{ error?: string }> {
+  await requireSuperAdmin();
+  const username = String(formData.get("username") ?? "").trim();
+  const password = String(formData.get("password") ?? "");
+  const isSuper = formData.get("is_super") === "1";
+  if (!/^[a-z0-9_.-]{2,30}$/i.test(username)) {
+    return { error: "Username must be 2-30 characters: letters, digits, dot, dash, underscore" };
+  }
+  if (password.length < 4) return { error: "Password must be at least 4 characters" };
+  if (await getAdminByUsername(username)) return { error: "That username is already taken" };
+  try {
+    await createAdmin(username, hashPassword(password), isSuper);
+  } catch {
+    return { error: "That username is already taken" };
+  }
+  revalidatePath("/admin");
+  return {};
+}
+
+export async function deleteAdminAction(formData: FormData): Promise<{ error?: string }> {
+  const admin = await requireSuperAdmin();
+  const id = Number(formData.get("admin_id"));
+  if (!Number.isInteger(id)) return { error: "Invalid account" };
+  if (id === admin.id) return { error: "You cannot delete your own account" };
+  const target = await getAdminById(id);
+  if (!target) return { error: "Account not found" };
+  if (target.isSuper && (await countSuperAdmins()) <= 1) {
+    return { error: "Cannot delete the last super admin" };
+  }
+  await deleteAdmin(id);
+  await setTournamentAdminToNullForAdmin(id);
+  revalidatePath("/admin");
+  return {};
+}
+
+async function setTournamentAdminToNullForAdmin(adminId: number): Promise<void> {
+  for (const t of await listTournaments()) {
+    if (t.adminId === adminId) await setTournamentAdmin(t.id, null);
+  }
+}
+
+export async function resetAdminPasswordAction(formData: FormData): Promise<{ error?: string }> {
+  await requireSuperAdmin();
+  const id = Number(formData.get("admin_id"));
+  const password = String(formData.get("password") ?? "");
+  if (!Number.isInteger(id)) return { error: "Invalid account" };
+  if (password.length < 4) return { error: "Password must be at least 4 characters" };
+  if (!(await getAdminById(id))) return { error: "Account not found" };
+  await updateAdminPassword(id, hashPassword(password));
+  return {};
+}
+
+export async function createTournamentAction(formData: FormData): Promise<{ error?: string }> {
+  await requireSuperAdmin();
+  const name = String(formData.get("name") ?? "").trim();
+  const type = String(formData.get("type") ?? "other") as TournamentType;
+  const timeControl = String(formData.get("time_control") ?? "").trim() || "10+5";
+  const roundsCount = Number(formData.get("rounds_count"));
+  const defaultRating = Number(formData.get("default_rating"));
+  const adminIdRaw = formData.get("admin_id");
+  const adminId = adminIdRaw && adminIdRaw !== "" ? Number(adminIdRaw) : null;
+  if (!name) return { error: "Tournament name is required" };
+  if (!["intradept", "interdept", "other"].includes(type)) return { error: "Invalid tournament type" };
+  if (!Number.isFinite(roundsCount) || roundsCount < 1 || roundsCount > 20) {
+    return { error: "Rounds must be between 1 and 20" };
+  }
+  if (!Number.isFinite(defaultRating) || defaultRating < 0) return { error: "Invalid default rating" };
+  if (adminId != null && !Number.isInteger(adminId)) return { error: "Invalid admin" };
+  try {
+    await createTournament({
+      name,
+      slug: slugFromName(name),
+      type,
+      timeControl,
+      roundsCount: Math.round(roundsCount),
+      defaultRating: Math.round(defaultRating),
+      adminId
+    });
+  } catch {
+    return { error: "A tournament with that name already exists" };
+  }
+  revalidatePath("/admin");
+  return {};
+}
+
+export async function updateTournamentAction(formData: FormData): Promise<{ error?: string }> {
+  await requireSuperAdmin();
+  const tournamentId = Number(formData.get("tournament_id"));
+  const name = String(formData.get("name") ?? "").trim();
+  const type = String(formData.get("type") ?? "") as TournamentType;
+  if (!Number.isInteger(tournamentId)) return { error: "Invalid tournament" };
+  const tournament = await getTournament(tournamentId);
+  if (!tournament) return { error: "Tournament not found" };
+  const patch: { name?: string; slug?: string; type?: TournamentType } = {};
+  if (name && name !== tournament.name) {
+    patch.name = name;
+    patch.slug = slugFromName(name);
+  }
+  if (type && ["intradept", "interdept", "other"].includes(type) && type !== tournament.type) {
+    patch.type = type;
+  }
+  try {
+    await updateTournament(tournamentId, patch);
+  } catch {
+    return { error: "A tournament with that name already exists" };
+  }
+  revalidateAll(patch.slug ?? tournament.slug);
+  revalidatePath(`/admin/${tournament.slug}`);
+  return {};
+}
+
+export async function setTournamentAdminAction(formData: FormData): Promise<{ error?: string }> {
+  await requireSuperAdmin();
+  const tournamentId = Number(formData.get("tournament_id"));
+  const adminIdRaw = formData.get("admin_id");
+  const adminId = adminIdRaw && adminIdRaw !== "" ? Number(adminIdRaw) : null;
+  if (!Number.isInteger(tournamentId)) return { error: "Invalid tournament" };
+  const tournament = await getTournament(tournamentId);
+  if (!tournament) return { error: "Tournament not found" };
+  if (adminId != null && !(await getAdminById(adminId))) return { error: "Account not found" };
+  await setTournamentAdmin(tournamentId, adminId);
+  revalidatePath("/admin");
+  revalidatePath(`/admin/${tournament.slug}`);
+  return {};
+}
+
+export async function setTournamentStatusAction(formData: FormData): Promise<{ error?: string }> {
+  await requireSuperAdmin();
+  const tournamentId = Number(formData.get("tournament_id"));
+  const status = String(formData.get("status") ?? "") as TournamentStatus;
+  if (!Number.isInteger(tournamentId)) return { error: "Invalid tournament" };
+  const tournament = await getTournament(tournamentId);
+  if (!tournament) return { error: "Tournament not found" };
+  if (!["active", "archived"].includes(status)) return { error: "Invalid status" };
+  await setTournamentStatus(tournamentId, status);
+  revalidateAll(tournament.slug);
+  return {};
+}
+
+export async function deleteTournamentAction(formData: FormData): Promise<{ error?: string }> {
+  await requireSuperAdmin();
+  const tournamentId = Number(formData.get("tournament_id"));
+  if (!Number.isInteger(tournamentId)) return { error: "Invalid tournament" };
+  const tournament = await getTournament(tournamentId);
+  if (!tournament) return { error: "Tournament not found" };
+  await deleteTournament(tournamentId);
+  revalidatePath("/admin");
+  return {};
+}
+
 // ---------- players ----------
 
 export async function addPlayerAction(formData: FormData): Promise<{ error?: string }> {
-  await requireAdmin();
+  const access = await tournamentAccess(formData);
+  if ("error" in access) return access;
+  const { tournament } = access;
   const name = String(formData.get("name") ?? "").trim();
-  const rating = Number(formData.get("rating") ?? (await getSettings()).defaultRating);
+  const rating = Number(formData.get("rating") ?? tournament.defaultRating);
   const ratingType = String(formData.get("rating_type") ?? "manual") as RatingType;
   if (!name) return { error: "Name is required" };
   try {
     await addPlayer(
+      tournament.id,
       name,
-      Number.isFinite(rating) ? rating : (await getSettings()).defaultRating,
+      Number.isFinite(rating) ? rating : tournament.defaultRating,
       ratingType === "fide" ? "fide" : "manual"
     );
   } catch {
     return { error: "A player with that name already exists" };
   }
-  revalidateAll();
+  revalidateAll(tournament.slug);
   return {};
 }
 
 export async function updatePlayerAction(formData: FormData): Promise<{ error?: string }> {
-  await requireAdmin();
+  const access = await tournamentAccess(formData);
+  if ("error" in access) return access;
+  const { tournament } = access;
   const id = Number(formData.get("id"));
   const name = String(formData.get("name") ?? "").trim();
-  const rating = Number(formData.get("rating") ?? 1200);
+  const rating = Number(formData.get("rating") ?? tournament.defaultRating);
   const ratingType = String(formData.get("rating_type") ?? "manual") as RatingType;
-  if (!name || !Number.isFinite(id)) return { error: "Invalid input" };
+  if (!name || !Number.isInteger(id)) return { error: "Invalid input" };
   try {
-    await updatePlayer(id, name, Number.isFinite(rating) ? rating : 1200, ratingType === "fide" ? "fide" : "manual");
+    await updatePlayer(
+      tournament.id,
+      id,
+      name,
+      Number.isFinite(rating) ? rating : tournament.defaultRating,
+      ratingType === "fide" ? "fide" : "manual"
+    );
   } catch {
     return { error: "A player with that name already exists" };
   }
-  revalidateAll();
+  revalidateAll(tournament.slug);
   return {};
 }
 
-export async function togglePlayerActiveAction(formData: FormData): Promise<void> {
-  await requireAdmin();
+export async function togglePlayerActiveAction(formData: FormData): Promise<{ error?: string }> {
+  const access = await tournamentAccess(formData);
+  if ("error" in access) return access;
+  const { tournament } = access;
   const id = Number(formData.get("id"));
   const active = formData.get("active") === "1";
-  await setPlayerActive(id, !active);
-  revalidateAll();
+  if (!Number.isInteger(id)) return { error: "Invalid input" };
+  await setPlayerActive(tournament.id, id, !active);
+  revalidateAll(tournament.slug);
+  return {};
 }
 
 export async function deletePlayerAction(formData: FormData): Promise<{ error?: string }> {
-  await requireAdmin();
+  const access = await tournamentAccess(formData);
+  if ("error" in access) return access;
+  const { tournament } = access;
   const id = Number(formData.get("id"));
-  const player = await getPlayer(id);
+  if (!Number.isInteger(id)) return { error: "Invalid input" };
+  const player = await getPlayer(tournament.id, id);
   if (!player) return { error: "Player not found" };
-  if (await playerHasGames(id)) {
+  if (await playerHasGames(tournament.id, id)) {
     return { error: "This player has already played in a round. Deactivate them instead of deleting." };
   }
-  await deletePlayer(id);
-  revalidateAll();
+  await deletePlayer(tournament.id, id);
+  revalidateAll(tournament.slug);
   return {};
 }
 
 // ---------- rounds ----------
 
-export async function generateRoundAction(): Promise<{ error?: string }> {
-  await requireAdmin();
-  const rounds = await listRounds();
+export async function generateRoundAction(tournamentId: number): Promise<{ error?: string }> {
+  const admin = await requireAdmin();
+  const tournament = await getTournament(tournamentId);
+  if (!tournament) return { error: "Tournament not found" };
+  if (!admin.isSuper && tournament.adminId !== admin.id) return { error: "Not authorized" };
+  const rounds = await listRounds(tournament.id);
   if (rounds.some((r) => r.status === "draft" || r.status === "published")) {
     return { error: "There is already a pending round. Complete or delete it first." };
   }
-  const players = await listPlayers();
+  const players = await listPlayers(tournament.id);
   const active = players.filter((p) => p.active === 1);
   if (active.length < 2) {
     return { error: "At least 2 active players are required" };
   }
-  const roundNumber = await nextRoundNumber();
-  if (roundNumber > (await getSettings()).roundsCount) {
-    return { error: `Only ${(await getSettings()).roundsCount} rounds are scheduled` };
+  const roundNumber = await nextRoundNumber(tournament.id);
+  if (roundNumber > tournament.roundsCount) {
+    return { error: `Only ${tournament.roundsCount} rounds are scheduled` };
   }
   try {
-    const games = await allGames();
+    const games = await allGames(tournament.id);
     const plan = pairRound(players, games);
-    const round = await createRound(roundNumber);
+    const round = await createRound(tournament.id, roundNumber);
     await replacePairings(
       round.id,
       plan.map((p) => ({
@@ -183,18 +399,20 @@ export async function generateRoundAction(): Promise<{ error?: string }> {
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Failed to generate round" };
   }
-  revalidateAll();
-  redirect(`/admin/rounds/${roundNumber}`);
+  revalidateAll(tournament.slug);
+  redirect(`/admin/${tournament.slug}/rounds/${roundNumber}`);
 }
 
 export async function regenerateRoundAction(formData: FormData): Promise<{ error?: string }> {
-  await requireAdmin();
+  const access = await tournamentAccess(formData);
+  if ("error" in access) return access;
+  const { tournament } = access;
   const roundId = Number(formData.get("round_id"));
-  const round = await getRound(roundId);
+  const round = await getRound(tournament.id, roundId);
   if (!round || round.status !== "draft") return { error: "Only draft rounds can be regenerated" };
   try {
-    const players = await listPlayers();
-    const games = await allGames();
+    const players = await listPlayers(tournament.id);
+    const games = await allGames(tournament.id);
     const plan = pairRound(players, games);
     await replacePairings(
       round.id,
@@ -210,15 +428,17 @@ export async function regenerateRoundAction(formData: FormData): Promise<{ error
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Failed to regenerate round" };
   }
-  revalidateAll();
-  redirect(`/admin/rounds/${round.number}`);
+  revalidateAll(tournament.slug);
+  redirect(`/admin/${tournament.slug}/rounds/${round.number}`);
 }
 
 export async function savePairingsAction(formData: FormData): Promise<{ error?: string }> {
-  await requireAdmin();
+  const access = await tournamentAccess(formData);
+  if ("error" in access) return access;
+  const { tournament } = access;
   const roundId = Number(formData.get("round_id"));
   const raw = String(formData.get("pairs") ?? "[]");
-  const round = await getRound(roundId);
+  const round = await getRound(tournament.id, roundId);
   if (!round || round.status !== "draft") return { error: "Only draft rounds can be edited" };
   let pairs: { whiteId: number | null; blackId: number | null; isBye: boolean; byeForId: number | null }[];
   try {
@@ -226,9 +446,9 @@ export async function savePairingsAction(formData: FormData): Promise<{ error?: 
   } catch {
     return { error: "Invalid pairing data" };
   }
-  const players = await listPlayers();
+  const players = await listPlayers(tournament.id);
   const plan: PairingPlan[] = pairs.map((p, i) => ({ board: i + 1, ...p }));
-  const warnings = validatePlan(plan, await allGames(), players);
+  const warnings = validatePlan(plan, await allGames(tournament.id), players);
   if (
     warnings.some(
       (w) => w.includes("twice") || w.includes("themselves") || w.includes("missing") || w.includes("inactive")
@@ -246,23 +466,28 @@ export async function savePairingsAction(formData: FormData): Promise<{ error?: 
       byeForId: p.byeForId
     }))
   );
-  revalidateAll();
+  revalidateAll(tournament.slug);
   return warnings.length > 0 ? { error: `Saved with warnings: ${warnings.join("; ")}` } : {};
 }
 
-export async function publishRoundAction(formData: FormData): Promise<void> {
-  await requireAdmin();
+export async function publishRoundAction(formData: FormData): Promise<{ error?: string }> {
+  const access = await tournamentAccess(formData);
+  if ("error" in access) return access;
+  const { tournament } = access;
   const roundId = Number(formData.get("round_id"));
-  const round = await getRound(roundId);
-  if (!round || round.status !== "draft") return;
-  await setRoundStatus(roundId, "published");
-  revalidateAll();
+  const round = await getRound(tournament.id, roundId);
+  if (!round || round.status !== "draft") return { error: "Only draft rounds can be published" };
+  await setRoundStatus(tournament.id, roundId, "published");
+  revalidateAll(tournament.slug);
+  return {};
 }
 
 export async function saveResultsAction(formData: FormData): Promise<{ error?: string }> {
-  await requireAdmin();
+  const access = await tournamentAccess(formData);
+  if ("error" in access) return access;
+  const { tournament } = access;
   const roundId = Number(formData.get("round_id"));
-  const round = await getRound(roundId);
+  const round = await getRound(tournament.id, roundId);
   if (!round || round.status !== "published") return { error: "Round must be published to enter results" };
   const results = String(formData.get("results") ?? "{}");
   let parsed: Record<string, GameResult>;
@@ -283,88 +508,97 @@ export async function saveResultsAction(formData: FormData): Promise<{ error?: s
     if (!["1-0", "0-1", "1/2", "+", "-"].includes(value)) return { error: "Invalid result value" };
     await setPairingResult(pairing.id, value);
   }
-  revalidateAll();
+  revalidateAll(tournament.slug);
   return {};
 }
 
 export async function completeRoundAction(formData: FormData): Promise<{ error?: string }> {
-  await requireAdmin();
+  const access = await tournamentAccess(formData);
+  if ("error" in access) return access;
+  const { tournament } = access;
   const roundId = Number(formData.get("round_id"));
-  const round = await getRound(roundId);
+  const round = await getRound(tournament.id, roundId);
   if (!round || round.status !== "published") return { error: "Round must be published" };
   const pairings = await listPairings(roundId);
   const pending = pairings.filter((p) => !p.isBye && p.result == null);
   if (pending.length > 0) {
     return { error: `${pending.length} result(s) still missing` };
   }
-  await setRoundStatus(roundId, "completed");
-  revalidateAll();
+  await setRoundStatus(tournament.id, roundId, "completed");
+  revalidateAll(tournament.slug);
   return {};
 }
 
-export async function reopenRoundAction(formData: FormData): Promise<void> {
-  await requireAdmin();
+export async function reopenRoundAction(formData: FormData): Promise<{ error?: string }> {
+  const access = await tournamentAccess(formData);
+  if ("error" in access) return access;
+  const { tournament } = access;
   const roundId = Number(formData.get("round_id"));
-  const round = await getRound(roundId);
-  if (!round || round.status !== "completed") return;
-  await setRoundStatus(roundId, "published");
-  for (const r of await listRounds()) {
+  const round = await getRound(tournament.id, roundId);
+  if (!round || round.status !== "completed") return { error: "Only completed rounds can be reopened" };
+  await setRoundStatus(tournament.id, roundId, "published");
+  for (const r of await listRounds(tournament.id)) {
     if (r.number > round.number) {
-      await deleteRound(r.id);
+      await deleteRound(tournament.id, r.id);
     }
   }
-  revalidateAll();
+  revalidateAll(tournament.slug);
+  return {};
 }
 
-export async function deleteRoundAction(formData: FormData): Promise<void> {
-  await requireAdmin();
+export async function deleteRoundAction(formData: FormData): Promise<{ error?: string }> {
+  const access = await tournamentAccess(formData);
+  if ("error" in access) return access;
+  const { tournament } = access;
   const roundId = Number(formData.get("round_id"));
-  if (await getRound(roundId)) {
-    await deleteRound(roundId);
+  if (await getRound(tournament.id, roundId)) {
+    await deleteRound(tournament.id, roundId);
   }
-  revalidateAll();
-  redirect("/admin");
+  revalidateAll(tournament.slug);
+  redirect(`/admin/${tournament.slug}`);
 }
 
-export async function resetTournamentAction(): Promise<void> {
-  await requireAdmin();
-  await resetTournament();
-  revalidateAll();
-  redirect("/");
+export async function resetTournamentAction(tournamentId: number): Promise<{ error?: string }> {
+  const admin = await requireAdmin();
+  const tournament = await getTournament(tournamentId);
+  if (!tournament) return { error: "Tournament not found" };
+  if (!admin.isSuper && tournament.adminId !== admin.id) return { error: "Not authorized" };
+  await resetTournament(tournament.id);
+  revalidateAll(tournament.slug);
+  redirect(`/admin/${tournament.slug}`);
 }
 
 // ---------- settings ----------
 
 export async function updateSettingsAction(formData: FormData): Promise<{ error?: string }> {
-  await requireAdmin();
-  const name = String(formData.get("tournament_name") ?? "").trim();
+  const access = await tournamentAccess(formData);
+  if ("error" in access) return access;
+  const { tournament } = access;
   const timeControl = String(formData.get("time_control") ?? "").trim();
   const roundsCount = Number(formData.get("rounds_count"));
   const defaultRating = Number(formData.get("default_rating"));
-  if (!name) return { error: "Tournament name is required" };
   if (!Number.isFinite(roundsCount) || roundsCount < 1 || roundsCount > 20) {
     return { error: "Rounds must be between 1 and 20" };
   }
   if (!Number.isFinite(defaultRating) || defaultRating < 0) return { error: "Invalid default rating" };
-  await setSetting("tournament_name", name);
-  await setSetting("time_control", timeControl || "10+5");
-  await setSetting("rounds_count", String(Math.round(roundsCount)));
-  await setSetting("default_rating", String(Math.round(defaultRating)));
-  revalidateAll();
+  await updateTournamentSettings(tournament.id, {
+    timeControl: timeControl || "10+5",
+    roundsCount: Math.round(roundsCount),
+    defaultRating: Math.round(defaultRating)
+  });
+  revalidateAll(tournament.slug);
   return {};
 }
 
 export async function changePasswordAction(formData: FormData): Promise<{ error?: string }> {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const current = String(formData.get("current") ?? "");
   const next = String(formData.get("next") ?? "");
   const confirm = String(formData.get("confirm") ?? "");
-  const settings = await getSettings();
-  if (!(await verifyPassword(current, settings.adminPasswordHash))) return { error: "Current password is incorrect" };
+  if (!(await verifyPassword(current, admin.passwordHash))) return { error: "Current password is incorrect" };
   if (next.length < 4) return { error: "New password must be at least 4 characters" };
   if (next !== confirm) return { error: "Passwords do not match" };
-  await changeAdminPassword(next);
-  revalidateAll();
+  await updateAdminPassword(admin.id, hashPassword(next));
   return {};
 }
 
@@ -381,13 +615,15 @@ function simulateResult(whiteRating: number, blackRating: number, seed: number):
   return "1/2";
 }
 
-export async function simulateAction(): Promise<SimulationResult> {
-  await requireAdmin();
-  const settings = await getSettings();
-  let players = await listPlayers();
-  let games = await allGames();
+export async function simulateAction(tournamentId: number): Promise<SimulationResult> {
+  const admin = await requireAdmin();
+  const tournament = await getTournament(tournamentId);
+  if (!tournament) throw new Error("Tournament not found");
+  if (!admin.isSuper && tournament.adminId !== admin.id) throw new Error("Not authorized");
+  const players = await listPlayers(tournament.id);
+  let games = await allGames(tournament.id);
   const playedRounds = games.reduce((m, g) => Math.max(m, g.round), 0);
-  const remaining = Math.max(0, settings.roundsCount - playedRounds);
+  const remaining = Math.max(0, tournament.roundsCount - playedRounds);
   let seed = 1;
   for (let r = 0; r < remaining; r++) {
     const plan = pairRound(players, games);
@@ -411,4 +647,13 @@ export async function simulateAction(): Promise<SimulationResult> {
   }
   const standings = computeStandings(players, games);
   return { standings, rounds: playedRounds + remaining };
+}
+
+function slugFromName(name: string): string {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+  return slug || "tournament";
 }

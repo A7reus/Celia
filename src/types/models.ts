@@ -1,5 +1,22 @@
 export type RatingType = "manual" | "fide";
 
+export type TournamentType = "intradept" | "interdept" | "other";
+
+export type TournamentStatus = "active" | "archived";
+
+export type Tournament = {
+  id: number;
+  slug: string;
+  name: string;
+  type: TournamentType;
+  timeControl: string;
+  roundsCount: number;
+  defaultRating: number;
+  status: TournamentStatus;
+  adminId: number | null;
+  createdAt: number;
+};
+
 export type GameResult = "1-0" | "0-1" | "1/2" | "+" | "-";
 
 export type Player = {

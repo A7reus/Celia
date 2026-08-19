@@ -1,16 +1,19 @@
 # Chess Pairing
 
-A small self-hosted Swiss-system chess tournament manager: pair rounds, publish pairings, enter results, and track standings. Built with Next.js (App Router), Turso (or a local SQLite fallback), and a deterministic FIDE-inspired pairing engine.
+A small self-hosted Swiss-system chess tournament manager for multiple tournaments: pair rounds, publish pairings, enter results, and track standings. Built with Next.js (App Router), Turso (or a local SQLite fallback), and a deterministic FIDE-inspired pairing engine.
 
 ## Features
 
+- Multiple tournaments, each with its own URL (`/jucse-2026/standings`), type tag (intradepartment / interdepartment / other), time control, and round count
+- Tournament history: finished tournaments can be archived and stay fully viewable
+- Admin accounts: a super admin creates tournaments and accounts; each tournament is assigned to one admin, who manages its players, rounds, and results
 - FIDE-inspired Swiss pairing (see [How the tournament works](#how-the-tournament-works)), with byes and color handling
 - Round lifecycle: generate (draft) -> publish -> complete (with results)
 - Pairing editor before publishing, results entry after publishing
 - Standings with tie-breaks: Buchholz, Median Buchholz, Sonneborn-Berger, Koya, direct encounter
 - Tournament Performance Rating (TPR) per player
 - Manual/FIDE ratings, optional inactive players, fixed number of rounds
-- Admin area (password-protected; default password `admin` on a fresh database, change it in Settings)
+- Admin area (username + password; fresh databases get a super admin `admin` / `admin`, change it in Settings)
 - Login rate limiting and optional IP allowlist
 - Light theme, responsive tables
 - Deterministic pairing engine (no randomness), covered by unit tests
@@ -30,7 +33,7 @@ cp .env.example .env.local   # optional, see "Environment variables" below
 pnpm dev
 ```
 
-Open http://localhost:3000. Without a `.env.local`, the app creates a local SQLite database on first run at `data/chess.db` (seeded with default settings, admin password `admin`). `/admin` is the admin area.
+Open http://localhost:3000. Without a `.env.local`, the app creates a local SQLite database on first run at `data/chess.db` (seeded with a super admin account `admin` / `admin`). `/admin` is the admin area.
 
 If you want to develop against the same database you'll use in production, create a Turso database first (see [Deployment](#deployment)), then fill in `.env.local`; the app will use it instead of the local file.
 
@@ -49,7 +52,7 @@ If you want to develop against the same database you'll use in production, creat
 pnpm dev           # development server
 pnpm build         # production build
 pnpm start         # run the production build
-pnpm test          # engine + scoring + rate-limit tests (vitest)
+pnpm test          # engine + scoring + rate-limit + migration tests (vitest)
 pnpm lint          # oxlint
 pnpm format        # format all files with Prettier
 pnpm format:check  # verify formatting (CI)
@@ -100,23 +103,27 @@ Standings are computed from all completed rounds.
 
 ```
 src/
-  app/               Next.js App Router pages (server components)
-    page.tsx         standings (crosstable with per-round results)
-    not-found.tsx    custom 404 page
-    pairings/        latest published round + per-round pairing pages
-    results/         results of completed rounds
-    players/[id]/    individual player page (stats, game history)
-    admin/           login, dashboard, players, settings, simulation
-    admin/(protected)/rounds/[n]/  pairing editor + results form
-  components/        tables, forms, status pills, buttons
+  app/
+    page.tsx           tournament list grouped by type (landing)
+    not-found.tsx      custom 404 page
+    [slug]/            public tournament pages
+      standings/       crosstable with per-round results
+      pairings/        latest published round + per-round pairing pages
+      results/         results of completed rounds
+      players/[id]/    individual player page (stats, game history)
+    admin/             login, super admin dashboard (tournaments + accounts)
+    admin/(protected)/[slug]/  per-tournament admin: dashboard, players,
+                               settings, simulation, rounds/[n]
+  components/          tables, tabs, forms, status pills, buttons
   lib/
-    db.ts            database adapter (Turso remote / SQLite fallback)
-    pairing.ts       the pairing engine (pure, deterministic)
-    scoring.ts       standings, tie-breaks, TPR (pure)
-    auth.ts          password hashing, sessions, login rate limiting
-    actions.ts       server actions (all writes go through these)
-  types/             shared types (type aliases only)
-  tests/             vitest tests (pairing engine, scoring, rate limiting)
+    db.ts              database adapter (Turso remote / SQLite fallback),
+                       schema v2 + legacy migration
+    pairing.ts         the pairing engine (pure, deterministic)
+    scoring.ts         standings, tie-breaks, TPR (pure)
+    auth.ts            password hashing, sessions, roles, login rate limiting
+    actions.ts         server actions (all writes go through these)
+  types/               shared types (type aliases only)
+  tests/               vitest tests (pairing engine, scoring, rate limiting, migration)
 ```
 
 - **Server components** fetch data and render; all state changes happen through **server actions** (`src/lib/actions.ts`), which revalidate affected routes after every write.
@@ -124,12 +131,14 @@ src/
 
 ### Data model
 
-SQLite schema (Turso and local fallback share it, created idempotently at startup):
+SQLite schema (Turso and local fallback share it, created idempotently at startup; legacy v1 databases are migrated automatically):
 
-- `settings`: key/value store: tournament name, time control, round count, default rating, admin password hash, session secret.
-- `players`: name, rating, rating type (manual/FIDE), active flag.
-- `rounds`: number + status (draft/published/completed).
+- `admins`: username, scrypt password hash, super-admin flag.
+- `tournaments`: slug, name, type (intradept/interdept/other), time control, round count, default rating, status (active/archived), assigned admin.
+- `players`: per tournament: name, rating, rating type (manual/FIDE), active flag. A name may repeat across tournaments but not within one.
+- `rounds`: per tournament: number + status (draft/published/completed).
 - `pairings`: per round and board: white/black player, result, bye flag.
+- `settings`: global keys only (session secret, seeded flag).
 - `login_limits`: per-IP failed-login tracking for rate limiting.
 
 ### Database adapter
@@ -143,8 +152,9 @@ The handle is cached per process. Because all queries go through the same interf
 
 ### Authentication and security
 
+- **Roles.** A super admin creates tournaments and admin accounts and assigns admins to tournaments. An assigned admin manages only their tournaments (including archived ones, which stay editable); public pages are read-only.
 - Passwords are hashed with **scrypt** (random salt, 64-byte key) and compared with `timingSafeEqual`.
-- Sessions are **stateless HMAC-SHA256 tokens** (30-day expiry) stored in an httpOnly, SameSite=Lax cookie; verification is `timingSafeEqual` on the signature.
+- Sessions are **stateless HMAC-SHA256 tokens** (30-day expiry, carries the admin id + role) stored in an httpOnly, SameSite=Lax cookie; verification is `timingSafeEqual` on the signature. Every server action re-checks the session and the caller's access to the target tournament.
 - **Login rate limiting:** after 5 failed attempts from the same IP (from `x-forwarded-for`), login is locked with exponential backoff (5 to 60 minutes). Locks expire after 15 minutes of inactivity and are cleared on success. Attempts during a lockout are rejected before password verification.
 - **Optional IP allowlist:** with `ADMIN_IP_ALLOWLIST` set, login is only accepted from the listed IPs.
 - Server actions inherit Next.js's built-in origin/host checks (CSRF protection).
@@ -153,13 +163,13 @@ The handle is cached per process. Because all queries go through the same interf
 ### UI patterns
 
 - **Standings table** shows a crosstable: each round cell displays the player's own result, colored green (win) / amber (draw) / red (loss).
-- **Loading indicators**: `loading.tsx` boundaries at the root and the dynamic segments (`pairings/[round]`, `players/[id]`, admin rounds) show an instant spinner while the next page streams in, so every navigation gives feedback.
+- **Loading indicators**: `loading.tsx` boundaries at the root and the dynamic segments (`[slug]/pairings/[round]`, `[slug]/players/[id]`, admin rounds) show an instant spinner while the next page streams in, so every navigation gives feedback.
 - **Pairing editor** (admin) lets you swap players between boards before publishing; **regenerate** validates the plan and produces a fresh one with warnings.
 - **Forms** use `useActionState`: `ActionForm` renders server-action errors and success messages; destructive actions use `ConfirmSubmitButton` (confirm dialog + pending state).
 
 ### Tests
 
-`src/tests/engine.test.ts` (vitest): pairing invariants over 7 rounds for 8-40 players (colors, rematches, byes), round-1 pairing shape, bye assignment, hand-verified standings (Buchholz, TPR, bye scoring, head-to-head). `src/tests/rate-limit.test.ts`: lockout behavior against an isolated temp database.
+`src/tests/engine.test.ts` (vitest): pairing invariants over 7 rounds for 8-40 players (colors, rematches, byes), round-1 pairing shape, bye assignment, hand-verified standings (Buchholz, TPR, bye scoring, head-to-head). `src/tests/rate-limit.test.ts`: lockout behavior against an isolated temp database. `src/tests/migration.test.ts`: v1 -> v2 schema migration (backfill, table rebuild, idempotency), per-tournament scoping of players/rounds, session tokens.
 
 ## Deployment
 
@@ -171,4 +181,4 @@ The app is designed for **Netlify + Turso** (the database is remote, so serverle
 4. The `_headers` file is picked up automatically by Netlify (security headers + no-store on admin).
 5. Optional hardening in the Netlify dashboard: DDoS protection (built-in), IP blocking, and site password protection for `/admin`.
 
-The default admin password on a fresh database is `admin`; change it immediately in Admin -> Settings.
+The default admin account on a fresh database is `admin` / `admin` (a super admin); change the password immediately in Admin -> Settings. Existing v1 databases keep their old password: the tournament becomes a `jucse-2026` tournament owned by the same admin.

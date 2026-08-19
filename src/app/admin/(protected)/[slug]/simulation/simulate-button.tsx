@@ -5,7 +5,7 @@ import { simulateAction } from "@/lib/actions";
 import type { SimulationResult } from "@/types";
 import { StandingsTable } from "@/components/standings-table";
 
-export function SimulateButton() {
+export function SimulateButton({ tournamentId, slug }: { tournamentId: number; slug: string }) {
   const [result, setResult] = useState<SimulationResult | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -14,7 +14,7 @@ export function SimulateButton() {
     setRunning(true);
     setError(null);
     try {
-      setResult(await simulateAction());
+      setResult(await simulateAction(tournamentId));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Simulation failed");
     }
@@ -42,7 +42,7 @@ export function SimulateButton() {
           <div className="border-b border-slate-100 px-4 py-2 text-sm font-medium text-slate-700 ">
             Simulated final standings after {result.rounds} rounds
           </div>
-          <StandingsTable standings={result.standings} roundCount={result.rounds} />
+          <StandingsTable standings={result.standings} roundCount={result.rounds} slug={slug} />
         </div>
       )}
     </div>
