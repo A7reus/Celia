@@ -28,7 +28,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <div className="max-w-5xl mx-auto px-4 py-3 text-xs text-slate-500 flex flex-wrap justify-between gap-x-4 gap-y-1">
             <span>Swiss-system pairings, results and standings</span>
             <a
-              href="https://github.com/A7reus/JUCSE-Intradepartment-Chess-Tournament"
+              href="https://github.com/A7reus/Celia"
               target="_blank"
               rel="noopener noreferrer"
               className="hover:text-slate-700"

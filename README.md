@@ -26,8 +26,8 @@ A small self-hosted Swiss-system chess tournament manager for multiple tournamen
 ## Development setup
 
 ```bash
-git clone <your-repo-url>
-cd chess-pairing
+git clone https://github.com/A7reus/Celia.git
+cd Celia
 pnpm install
 cp .env.example .env.local   # optional, see "Environment variables" below
 pnpm dev
