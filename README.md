@@ -159,7 +159,7 @@ The handle is cached per process. Because all queries go through the same interf
 - **Login rate limiting:** after 5 failed attempts from the same IP (from `x-forwarded-for`), login is locked with exponential backoff (5 to 60 minutes). Locks expire after 15 minutes of inactivity and are cleared on success. Attempts during a lockout are rejected before password verification.
 - **Optional IP allowlist:** with `ADMIN_IP_ALLOWLIST` set, login is only accepted from the listed IPs.
 - Server actions inherit Next.js's built-in origin/host checks (CSRF protection).
-- `_headers` (Netlify edge config): security headers site-wide (CSP, frame/clickjacking protection, nosniff, no-referrer, HSTS) and `Cache-Control: no-store` + `noindex` on `/admin/*`.
+- Security headers are served by Next.js itself (`next.config.ts` `headers()`): CSP, frame/clickjacking protection, nosniff, no-referrer, HSTS site-wide, and `Cache-Control: no-store` + `noindex` on `/admin/*`. They work on any hosting platform (Netlify or Vercel); Vercel also adds its own HSTS, which is harmless.
 
 ### UI patterns
 
@@ -174,12 +174,12 @@ The handle is cached per process. Because all queries go through the same interf
 
 ## Deployment
 
-The app is designed for **Netlify + Turso** (the database is remote, so serverless is fine; the local SQLite path is only a development fallback).
+The app is designed for **serverless hosting (Netlify or Vercel) + Turso** (the database is remote, so serverless is fine; the local SQLite path is only a development fallback).
 
 1. Create a Turso database: `turso db create chess-tournament` and get its URL + a read-write token (`turso db tokens create <db>`).
-2. On Netlify: add the site, point it at the repo, set the build command to `pnpm build` and the install command to `pnpm install`.
-3. Set environment variables in Netlify: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, and optionally `ADMIN_IP_ALLOWLIST`. The schema and seed are created automatically on first request.
-4. The `_headers` file is picked up automatically by Netlify (security headers + no-store on admin).
-5. Optional hardening in the Netlify dashboard: DDoS protection (built-in), IP blocking, and site password protection for `/admin`.
+2. Import the repo on Netlify or Vercel. Netlify: set the build command to `pnpm build` and the install command to `pnpm install`. Vercel: the Next.js preset is detected automatically.
+3. Set environment variables: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, and optionally `ADMIN_IP_ALLOWLIST`. The schema and seed are created automatically on first request.
+4. Security headers and `no-store` on `/admin/*` are served by `next.config.ts`, so no platform config is needed.
+5. Optional hardening: Netlify dashboard (DDoS protection, IP blocking, site password protection for `/admin`) or Vercel (Firewall rules, IP blocking, and password-protected preview deployments).
 
 The default admin account on a fresh database is `admin` / `admin` (a super admin); change the password immediately in Admin -> Settings. The super admin dashboard also offers a danger-zone "wipe everything" action that deletes all tournaments and all non-super admin accounts.
