@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Chess Tournaments",
+  title: "Celia",
   description: "Swiss-system chess tournaments: pairings, results and standings"
 };
 
@@ -26,7 +26,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <main className="flex-1 w-full max-w-5xl mx-auto px-4 py-6">{children}</main>
         <footer className="w-full border-t border-slate-200 bg-white">
           <div className="max-w-5xl mx-auto px-4 py-3 text-xs text-slate-500 flex flex-wrap justify-between gap-x-4 gap-y-1">
-            <span>Swiss-system pairings, results and standings</span>
+            <span>Celia · Swiss-system pairings, results and standings</span>
             <a
               href="https://github.com/A7reus/Celia"
               target="_blank"
@@ -48,9 +48,9 @@ function SiteHeader() {
       <div className="max-w-5xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="min-w-0">
           <Link href="/" className="block font-semibold text-slate-900 truncate">
-            Chess Tournaments
+            Celia
           </Link>
-          <span className="text-xs text-slate-500 hidden sm:block">JUCSE tournaments hub</span>
+          <span className="text-xs text-slate-500 hidden sm:block">Swiss-system tournaments</span>
         </div>
         <nav className="flex items-center gap-1 text-sm shrink-0">
           <NavLink href="/" subtle>

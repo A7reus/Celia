@@ -5,6 +5,7 @@ import { createAdminAction, createTournamentAction, logoutAction } from "@/lib/a
 import { ActionForm } from "@/components/action-form";
 import { TournamentRow } from "./tournament-row";
 import { AdminRow } from "./admin-row";
+import { WipeAllButton } from "./wipe-all-button";
 
 export const dynamic = "force-dynamic";
 
@@ -59,7 +60,7 @@ export default async function AdminOverviewPage() {
                 id="name"
                 name="name"
                 required
-                placeholder="e.g. JUCSE Intradepartment Chess Tournament 2026"
+                placeholder="e.g. Interdepartment Chess Tournament 2026"
                 className="w-full rounded-md border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
@@ -130,6 +131,19 @@ export default async function AdminOverviewPage() {
                   </option>
                 ))}
               </select>
+            </div>
+            <div className="sm:col-span-2">
+              <label htmlFor="description" className="block text-xs font-medium text-slate-600 mb-1">
+                Description (optional, shown on the listing and searchable)
+              </label>
+              <textarea
+                id="description"
+                name="description"
+                rows={2}
+                maxLength={300}
+                placeholder="e.g. Annual interdepartment tournament, 7 rounds, 10+5"
+                className="w-full rounded-md border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
             </div>
             <div className="sm:col-span-2">
               <button
@@ -209,6 +223,20 @@ export default async function AdminOverviewPage() {
           {admins.map((a) => (
             <AdminRow key={a.id} admin={a} canDelete={a.id !== admin.id && !(a.isSuper && superCount <= 1)} />
           ))}
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-rose-600 ">Danger zone</h2>
+        <div className="rounded-lg border border-rose-200 bg-white shadow-sm">
+          <div className="border-b border-rose-100 px-4 py-2 text-sm font-medium text-rose-700 ">Wipe everything</div>
+          <div className="space-y-3 p-4">
+            <p className="text-xs text-slate-500 ">
+              Deletes all tournaments (with their players, rounds, pairings and results) and all non-super admin
+              accounts. Super admin accounts are kept. This cannot be undone.
+            </p>
+            <WipeAllButton />
+          </div>
         </div>
       </section>
     </div>

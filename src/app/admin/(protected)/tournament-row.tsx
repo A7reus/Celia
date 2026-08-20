@@ -19,6 +19,7 @@ const TYPE_LABELS: Record<TournamentType, string> = {
 export function TournamentRow({ tournament, admins }: { tournament: Tournament; admins: AdminSummary[] }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(tournament.name);
+  const [description, setDescription] = useState(tournament.description ?? "");
   const [type, setType] = useState<TournamentType>(tournament.type);
   const [adminId, setAdminId] = useState(tournament.adminId ? String(tournament.adminId) : "");
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +31,7 @@ export function TournamentRow({ tournament, admins }: { tournament: Tournament; 
     const form = new FormData();
     form.set("tournament_id", String(tournament.id));
     form.set("name", name);
+    form.set("description", description);
     form.set("type", type);
     const result = await updateTournamentAction(form);
     if (result.error) {
@@ -108,11 +110,24 @@ export function TournamentRow({ tournament, admins }: { tournament: Tournament; 
               Save
             </button>
             <button
-              onClick={() => setEditing(false)}
+              onClick={() => {
+                setEditing(false);
+                setName(tournament.name);
+                setDescription(tournament.description ?? "");
+                setType(tournament.type);
+              }}
               className="rounded-md border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 cursor-pointer"
             >
               Cancel
             </button>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+              maxLength={300}
+              placeholder="Description (shown on the listing, searchable)"
+              className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
           </div>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
@@ -128,6 +143,9 @@ export function TournamentRow({ tournament, admins }: { tournament: Tournament; 
               </span>
             )}
           </div>
+        )}
+        {!editing && tournament.description && (
+          <p className="text-xs text-slate-500 line-clamp-2 ">{tournament.description}</p>
         )}
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="text-xs text-slate-500 ">Admin:</span>

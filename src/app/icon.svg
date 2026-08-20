@@ -1,0 +1,9 @@
+<!-- Knight silhouette adapted from "Chess klt45.svg" by Cburnett (Wikimedia Commons, CC BY-SA 3.0). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#0f172a"/>
+  <g transform="translate(20, -20) scale(10.5)">
+    <path fill="#f8fafc" d="M22.5 25s4.5-7.5 3-10.5c0 0-1-2.5-3-2.5s-3 2.5-3 2.5c-1.5 3 3 10.5 3 10.5"/>
+    <path fill="#f8fafc" d="M12.5 37c5.5 3.5 14.5 3.5 20 0v-7s9-4.5 6-10.5c-4-6.5-13.5-3.5-16 4V27v-3.5c-2.5-7.5-12-10.5-16-4-3 6 6 10.5 6 10.5v7"/>
+    <path d="M22.5 11.63V6M20 8h5" fill="none" stroke="#f8fafc" stroke-width="1.2" stroke-linecap="round"/>
+  </g>
+</svg>

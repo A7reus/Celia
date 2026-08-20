@@ -15,7 +15,7 @@ const TYPE_LABELS: Record<TournamentType, string> = {
 export async function generateMetadata({ params }: LayoutProps<"/[slug]">): Promise<Metadata> {
   const { slug } = await params;
   const tournament = await getTournamentBySlug(slug);
-  return { title: tournament ? `${tournament.name} | Chess Tournaments` : "Chess Tournaments" };
+  return { title: tournament ? `${tournament.name} | Celia` : "Celia" };
 }
 
 export default async function TournamentLayout({ children, params }: LayoutProps<"/[slug]">) {

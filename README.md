@@ -1,10 +1,11 @@
-# Chess Pairing
+# Celia
 
 A small self-hosted Swiss-system chess tournament manager for multiple tournaments: pair rounds, publish pairings, enter results, and track standings. Built with Next.js (App Router), Turso (or a local SQLite fallback), and a deterministic FIDE-inspired pairing engine.
 
 ## Features
 
-- Multiple tournaments, each with its own URL (`/jucse-2026/standings`), type tag (intradepartment / interdepartment / other), time control, and round count
+- Multiple tournaments, each with its own URL (a UUID slug such as `/b0f2c9d4-.../standings`), type tag (intradepartment / interdepartment / other), time control, and round count
+- Searchable tournament listing: find tournaments by name or description
 - Tournament history: finished tournaments can be archived and stay fully viewable
 - Admin accounts: a super admin creates tournaments and accounts; each tournament is assigned to one admin, who manages its players, rounds, and results
 - FIDE-inspired Swiss pairing (see [How the tournament works](#how-the-tournament-works)), with byes and color handling
@@ -52,7 +53,7 @@ If you want to develop against the same database you'll use in production, creat
 pnpm dev           # development server
 pnpm build         # production build
 pnpm start         # run the production build
-pnpm test          # engine + scoring + rate-limit + migration tests (vitest)
+pnpm test          # engine + scoring + rate-limit + database tests (vitest)
 pnpm lint          # oxlint
 pnpm format        # format all files with Prettier
 pnpm format:check  # verify formatting (CI)
@@ -117,13 +118,13 @@ src/
   components/          tables, tabs, forms, status pills, buttons
   lib/
     db.ts              database adapter (Turso remote / SQLite fallback),
-                       schema v2 + legacy migration
+                       schema + forward column additions (idempotent at startup)
     pairing.ts         the pairing engine (pure, deterministic)
     scoring.ts         standings, tie-breaks, TPR (pure)
     auth.ts            password hashing, sessions, roles, login rate limiting
     actions.ts         server actions (all writes go through these)
   types/               shared types (type aliases only)
-  tests/               vitest tests (pairing engine, scoring, rate limiting, migration)
+  tests/               vitest tests (pairing engine, scoring, rate limiting, database)
 ```
 
 - **Server components** fetch data and render; all state changes happen through **server actions** (`src/lib/actions.ts`), which revalidate affected routes after every write.
@@ -131,10 +132,10 @@ src/
 
 ### Data model
 
-SQLite schema (Turso and local fallback share it, created idempotently at startup; legacy v1 databases are migrated automatically):
+SQLite schema (Turso and local fallback share it, created idempotently at startup; new columns are added automatically when the schema grows):
 
 - `admins`: username, scrypt password hash, super-admin flag.
-- `tournaments`: slug, name, type (intradept/interdept/other), time control, round count, default rating, status (active/archived), assigned admin.
+- `tournaments`: UUID slug (the permanent URL), name, optional description (searchable), type (intradept/interdept/other), time control, round count, default rating, status (active/archived), assigned admin.
 - `players`: per tournament: name, rating, rating type (manual/FIDE), active flag. A name may repeat across tournaments but not within one.
 - `rounds`: per tournament: number + status (draft/published/completed).
 - `pairings`: per round and board: white/black player, result, bye flag.
@@ -169,7 +170,7 @@ The handle is cached per process. Because all queries go through the same interf
 
 ### Tests
 
-`src/tests/engine.test.ts` (vitest): pairing invariants over 7 rounds for 8-40 players (colors, rematches, byes), round-1 pairing shape, bye assignment, hand-verified standings (Buchholz, TPR, bye scoring, head-to-head). `src/tests/rate-limit.test.ts`: lockout behavior against an isolated temp database. `src/tests/migration.test.ts`: v1 -> v2 schema migration (backfill, table rebuild, idempotency), per-tournament scoping of players/rounds, session tokens.
+`src/tests/engine.test.ts` (vitest): pairing invariants over 7 rounds for 8-40 players (colors, rematches, byes), round-1 pairing shape, bye assignment, hand-verified standings (Buchholz, TPR, bye scoring, head-to-head). `src/tests/rate-limit.test.ts`: lockout behavior against an isolated temp database. `src/tests/db.test.ts`: bootstrap (seed super admin), tournament search by name/description, per-tournament scoping of players/rounds, duplicate names across tournaments, the wipe-all safety valve, session tokens.
 
 ## Deployment
 
@@ -181,4 +182,4 @@ The app is designed for **Netlify + Turso** (the database is remote, so serverle
 4. The `_headers` file is picked up automatically by Netlify (security headers + no-store on admin).
 5. Optional hardening in the Netlify dashboard: DDoS protection (built-in), IP blocking, and site password protection for `/admin`.
 
-The default admin account on a fresh database is `admin` / `admin` (a super admin); change the password immediately in Admin -> Settings. Existing v1 databases keep their old password: the tournament becomes a `jucse-2026` tournament owned by the same admin.
+The default admin account on a fresh database is `admin` / `admin` (a super admin); change the password immediately in Admin -> Settings. The super admin dashboard also offers a danger-zone "wipe everything" action that deletes all tournaments and all non-super admin accounts.

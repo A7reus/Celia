@@ -10,8 +10,10 @@ const TYPE_LABELS: Record<TournamentType, string> = {
   other: "Other"
 };
 
-export default async function HomePage() {
-  const tournaments = await listTournaments();
+export default async function HomePage({ searchParams }: PageProps<"/">) {
+  const { q } = await searchParams;
+  const query = typeof q === "string" ? q : "";
+  const tournaments = await listTournaments(query);
   const groups: { type: TournamentType; tournaments: typeof tournaments }[] = (
     ["intradept", "interdept", "other"] as TournamentType[]
   ).map((type) => ({ type, tournaments: tournaments.filter((t) => t.type === type) }));
@@ -26,9 +28,32 @@ export default async function HomePage() {
         </p>
       </div>
 
+      <form method="GET" action="/" className="flex flex-wrap items-center gap-2">
+        <input
+          type="search"
+          name="q"
+          defaultValue={query}
+          placeholder="Search tournaments by name or description"
+          className="min-w-56 flex-1 rounded-md border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        />
+        <button
+          type="submit"
+          className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 cursor-pointer"
+        >
+          Search
+        </button>
+        {query && (
+          <Link href="/" className="text-xs text-slate-500 hover:text-slate-700">
+            Clear
+          </Link>
+        )}
+      </form>
+
       {tournaments.length === 0 && (
         <div className="rounded-lg border-dashed border border-slate-300 bg-white p-8 text-center text-sm text-slate-500 ">
-          No tournaments yet. A tournament will appear here once it is created.
+          {query
+            ? "No tournaments match your search."
+            : "No tournaments yet. A tournament will appear here once it is created."}
         </div>
       )}
 
@@ -59,6 +84,7 @@ export default async function HomePage() {
                         </span>
                       </span>
                     </div>
+                    {t.description && <p className="mt-2 text-xs text-slate-500 line-clamp-2 ">{t.description}</p>}
                     <p className="mt-2 text-xs text-slate-500 ">
                       {t.timeControl} · {t.roundsCount} rounds · {players} player{players === 1 ? "" : "s"} ·{" "}
                       {completed} round{completed === 1 ? "" : "s"} played

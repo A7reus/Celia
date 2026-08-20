@@ -8,6 +8,7 @@ export type Tournament = {
   id: number;
   slug: string;
   name: string;
+  description: string | null;
   type: TournamentType;
   timeControl: string;
   roundsCount: number;

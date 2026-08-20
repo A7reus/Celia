@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { randomUUID } from "node:crypto";
 import {
   addPlayer,
   allGames,
@@ -34,7 +35,8 @@ import {
   updateTournament,
   updateTournamentSettings,
   countSuperAdmins,
-  createAdmin
+  createAdmin,
+  wipeAllData
 } from "./db";
 import {
   clearAdminSession,
@@ -190,6 +192,7 @@ export async function resetAdminPasswordAction(formData: FormData): Promise<{ er
 export async function createTournamentAction(formData: FormData): Promise<{ error?: string }> {
   await requireSuperAdmin();
   const name = String(formData.get("name") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim() || null;
   const type = String(formData.get("type") ?? "other") as TournamentType;
   const timeControl = String(formData.get("time_control") ?? "").trim() || "10+5";
   const roundsCount = Number(formData.get("rounds_count"));
@@ -197,6 +200,7 @@ export async function createTournamentAction(formData: FormData): Promise<{ erro
   const adminIdRaw = formData.get("admin_id");
   const adminId = adminIdRaw && adminIdRaw !== "" ? Number(adminIdRaw) : null;
   if (!name) return { error: "Tournament name is required" };
+  if (description && description.length > 300) return { error: "Description must be 300 characters or fewer" };
   if (!["intradept", "interdept", "other"].includes(type)) return { error: "Invalid tournament type" };
   if (!Number.isFinite(roundsCount) || roundsCount < 1 || roundsCount > 20) {
     return { error: "Rounds must be between 1 and 20" };
@@ -204,19 +208,16 @@ export async function createTournamentAction(formData: FormData): Promise<{ erro
   if (!Number.isFinite(defaultRating) || defaultRating < 0) return { error: "Invalid default rating" };
   if (adminId != null && !Number.isInteger(adminId)) return { error: "Invalid admin" };
   if (adminId != null && !(await getAdminById(adminId))) return { error: "Account not found" };
-  try {
-    await createTournament({
-      name,
-      slug: slugFromName(name),
-      type,
-      timeControl,
-      roundsCount: Math.round(roundsCount),
-      defaultRating: Math.round(defaultRating),
-      adminId
-    });
-  } catch {
-    return { error: "A tournament with that name already exists" };
-  }
+  await createTournament({
+    name,
+    slug: randomUUID(),
+    description,
+    type,
+    timeControl,
+    roundsCount: Math.round(roundsCount),
+    defaultRating: Math.round(defaultRating),
+    adminId
+  });
   revalidatePath("/admin");
   return {};
 }
@@ -224,23 +225,25 @@ export async function createTournamentAction(formData: FormData): Promise<{ erro
 export async function updateTournamentAction(formData: FormData): Promise<{ error?: string }> {
   await requireSuperAdmin();
   const tournamentId = Number(formData.get("tournament_id"));
-  const name = String(formData.get("name") ?? "").trim();
-  const type = String(formData.get("type") ?? "") as TournamentType;
   if (!Number.isInteger(tournamentId)) return { error: "Invalid tournament" };
   const tournament = await getTournament(tournamentId);
   if (!tournament) return { error: "Tournament not found" };
-  const patch: { name?: string; type?: TournamentType } = {};
+  const name = String(formData.get("name") ?? "").trim();
+  const descriptionRaw = formData.get("description");
+  const type = String(formData.get("type") ?? "") as TournamentType;
+  const patch: { name?: string; type?: TournamentType; description?: string | null } = {};
   if (name && name !== tournament.name) {
     patch.name = name;
+  }
+  if (descriptionRaw !== null && descriptionRaw !== undefined && descriptionRaw !== tournament.description) {
+    const description = String(descriptionRaw).trim() || null;
+    if (description && description.length > 300) return { error: "Description must be 300 characters or fewer" };
+    patch.description = description;
   }
   if (type && ["intradept", "interdept", "other"].includes(type) && type !== tournament.type) {
     patch.type = type;
   }
-  try {
-    await updateTournament(tournamentId, patch);
-  } catch {
-    return { error: "A tournament with that name already exists" };
-  }
+  await updateTournament(tournamentId, patch);
   revalidateAll(tournament.slug);
   revalidatePath(`/admin/${tournament.slug}`);
   return {};
@@ -282,6 +285,14 @@ export async function deleteTournamentAction(formData: FormData): Promise<{ erro
   if (!tournament) return { error: "Tournament not found" };
   await deleteTournament(tournamentId);
   revalidatePath("/admin");
+  return {};
+}
+
+export async function wipeAllAction(): Promise<{ error?: string }> {
+  await requireSuperAdmin();
+  await wipeAllData();
+  revalidatePath("/admin");
+  revalidatePath("/");
   return {};
 }
 
@@ -647,13 +658,4 @@ export async function simulateAction(tournamentId: number): Promise<SimulationRe
   }
   const standings = computeStandings(players, games);
   return { standings, rounds: playedRounds + remaining };
-}
-
-function slugFromName(name: string): string {
-  const slug = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
-  return slug || "tournament";
 }

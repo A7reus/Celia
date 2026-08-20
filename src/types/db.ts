@@ -28,6 +28,7 @@ export type TournamentRow = {
   id: number;
   slug: string;
   name: string;
+  description: string | null;
   type: string;
   time_control: string;
   rounds_count: number;
@@ -40,6 +41,7 @@ export type TournamentRow = {
 export type TournamentUpsert = {
   name: string;
   slug: string;
+  description: string | null;
   type: TournamentType;
   timeControl: string;
   roundsCount: number;

@@ -12,3 +12,4 @@ pnpm-lock.yaml
 _headers
 .gitignore
 LICENSE
+*.svg

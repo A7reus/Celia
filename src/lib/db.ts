@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS tournaments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   slug TEXT NOT NULL UNIQUE COLLATE NOCASE,
   name TEXT NOT NULL,
+  description TEXT,
   type TEXT NOT NULL DEFAULT 'intradept',
   time_control TEXT NOT NULL DEFAULT '10+5',
   rounds_count INTEGER NOT NULL DEFAULT 7,
@@ -161,8 +162,6 @@ export function getDb(): Promise<DbHandle> {
       const db = url && token ? remoteHandle(url, token) : localHandle(path.join(dataDir, "chess.db"));
       await db.exec(SCHEMA);
       await ensureColumns(db);
-      await migrateLegacyTables(db);
-      await migrateLegacy(db);
       await db.exec(SCHEMA_INDEXES);
       await seed(db);
       return db;
@@ -172,96 +171,17 @@ export function getDb(): Promise<DbHandle> {
 }
 
 async function ensureColumns(db: DbHandle): Promise<void> {
-  for (const table of ["players", "rounds"]) {
+  const additions: { table: string; column: string; sql: string }[] = [
+    { table: "tournaments", column: "description", sql: "ALTER TABLE tournaments ADD COLUMN description TEXT" }
+  ];
+  for (const c of additions) {
     const rows = (await db.all(
-      `SELECT COUNT(*) AS n FROM pragma_table_info('${table}') WHERE name = 'tournament_id'`
+      `SELECT COUNT(*) AS n FROM pragma_table_info('${c.table}') WHERE name = '${c.column}'`
     )) as unknown as { n: number }[];
     if (Number(rows[0]?.n ?? 0) === 0) {
-      await db.run(
-        `ALTER TABLE ${table} ADD COLUMN tournament_id INTEGER REFERENCES tournaments(id) ON DELETE CASCADE`
-      );
+      await db.run(c.sql);
     }
   }
-}
-
-async function migrateLegacyTables(db: DbHandle): Promise<void> {
-  const playersSql = (await db.get("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'players'")) as
-    { sql: string } | undefined;
-  if (playersSql?.sql && /UNIQUE\s*\(\s*name\s*\)/i.test(playersSql.sql)) {
-    await db.exec(`
-      DROP TABLE IF EXISTS players_new;
-      CREATE TABLE players_new (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        tournament_id INTEGER REFERENCES tournaments(id) ON DELETE CASCADE,
-        name TEXT NOT NULL COLLATE NOCASE,
-        rating INTEGER NOT NULL,
-        rating_type TEXT NOT NULL DEFAULT 'manual',
-        active INTEGER NOT NULL DEFAULT 1,
-        UNIQUE(tournament_id, name)
-      );
-      INSERT INTO players_new (id, tournament_id, name, rating, rating_type, active)
-        SELECT id, tournament_id, name, rating, rating_type, active FROM players;
-      DROP TABLE players;
-      ALTER TABLE players_new RENAME TO players;
-    `);
-  }
-  const roundsSql = (await db.get("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'rounds'")) as
-    { sql: string } | undefined;
-  if (roundsSql?.sql && /UNIQUE\s*\(\s*number\s*\)/i.test(roundsSql.sql)) {
-    await db.exec(`
-      DROP TABLE IF EXISTS rounds_new;
-      CREATE TABLE rounds_new (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        tournament_id INTEGER REFERENCES tournaments(id) ON DELETE CASCADE,
-        number INTEGER NOT NULL,
-        status TEXT NOT NULL DEFAULT 'draft',
-        UNIQUE(tournament_id, number)
-      );
-      INSERT INTO rounds_new (id, tournament_id, number, status)
-        SELECT id, tournament_id, number, status FROM rounds;
-      DROP TABLE rounds;
-      ALTER TABLE rounds_new RENAME TO rounds;
-    `);
-  }
-}
-
-async function migrateLegacy(db: DbHandle): Promise<void> {
-  const legacy = (await db.get("SELECT value FROM settings WHERE key = 'tournament_name'")) as
-    { value: string } | undefined;
-  if (!legacy) return;
-  const tournaments = (await db.get("SELECT COUNT(*) AS n FROM tournaments")) as unknown as { n: number };
-  if (Number(tournaments.n) > 0) return;
-
-  const get = async (key: string): Promise<string | undefined> =>
-    ((await db.get("SELECT value FROM settings WHERE key = ?", [key])) as { value: string } | undefined)?.value;
-
-  const name = legacy.value || "JUCSE Intradepartment Chess Tournament 2026";
-  const adminHash = (await get("admin_password_hash")) ?? hashPassword(DEFAULT_PASSWORD);
-  const adminResult = await db.run(
-    "INSERT INTO admins (username, password_hash, is_super, created_at) VALUES (?, ?, 1, ?)",
-    ["admin", adminHash, Date.now()]
-  );
-  const adminId = Number(adminResult.lastInsertRowid);
-
-  const tournamentResult = await db.run(
-    `INSERT INTO tournaments (slug, name, type, time_control, rounds_count, default_rating, status, admin_id, created_at)
-     VALUES ('jucse-2026', ?, 'intradept', ?, ?, ?, 'active', ?, ?)`,
-    [
-      name,
-      (await get("time_control")) ?? "10+5",
-      Number((await get("rounds_count")) ?? "7"),
-      Number((await get("default_rating")) ?? "1200"),
-      adminId,
-      Date.now()
-    ]
-  );
-  const tournamentId = Number(tournamentResult.lastInsertRowid);
-
-  await db.run("UPDATE players SET tournament_id = ? WHERE tournament_id IS NULL", [tournamentId]);
-  await db.run("UPDATE rounds SET tournament_id = ? WHERE tournament_id IS NULL", [tournamentId]);
-  await db.exec(
-    "DELETE FROM settings WHERE key IN ('tournament_name', 'time_control', 'rounds_count', 'default_rating', 'admin_password_hash')"
-  );
 }
 
 async function seed(db: DbHandle): Promise<void> {
@@ -367,6 +287,7 @@ function toTournament(row: TournamentRow): Tournament {
     id: row.id,
     slug: row.slug,
     name: row.name,
+    description: row.description ?? null,
     type: row.type as Tournament["type"],
     timeControl: row.time_control,
     roundsCount: row.rounds_count,
@@ -377,8 +298,23 @@ function toTournament(row: TournamentRow): Tournament {
   };
 }
 
-export async function listTournaments(): Promise<Tournament[]> {
+function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, (m) => `\\${m}`);
+}
+
+export async function listTournaments(q?: string): Promise<Tournament[]> {
   const db = await getDb();
+  const search = q?.trim();
+  if (search) {
+    const like = `%${escapeLike(search)}%`;
+    const rows = (await db.all(
+      `SELECT * FROM tournaments
+       WHERE name LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\'
+       ORDER BY status, created_at DESC`,
+      [like, like]
+    )) as unknown as TournamentRow[];
+    return rows.map(toTournament);
+  }
   const rows = (await db.all(
     "SELECT * FROM tournaments ORDER BY status, created_at DESC"
   )) as unknown as TournamentRow[];
@@ -401,11 +337,12 @@ export async function getTournamentBySlug(slug: string): Promise<Tournament | nu
 export async function createTournament(input: TournamentUpsert): Promise<number> {
   const db = await getDb();
   const result = await db.run(
-    `INSERT INTO tournaments (slug, name, type, time_control, rounds_count, default_rating, status, admin_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+    `INSERT INTO tournaments (slug, name, description, type, time_control, rounds_count, default_rating, status, admin_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
     [
       input.slug.trim().toLowerCase(),
       input.name.trim(),
+      input.description?.trim() || null,
       input.type,
       input.timeControl,
       Math.max(1, Math.round(input.roundsCount)),
@@ -417,15 +354,28 @@ export async function createTournament(input: TournamentUpsert): Promise<number>
   return Number(result.lastInsertRowid);
 }
 
-export async function updateTournament(id: number, patch: { name?: string; type?: Tournament["type"] }): Promise<void> {
+export async function updateTournament(
+  id: number,
+  patch: { name?: string; type?: Tournament["type"]; description?: string | null }
+): Promise<void> {
   const db = await getDb();
-  await db.run(
-    `UPDATE tournaments SET
-       name = COALESCE(?, name),
-       type = COALESCE(?, type)
-     WHERE id = ?`,
-    [patch.name?.trim() ?? null, patch.type ?? null, id]
-  );
+  const sets: string[] = [];
+  const args: (string | number | null)[] = [];
+  if (patch.name !== undefined) {
+    sets.push("name = ?");
+    args.push(patch.name.trim());
+  }
+  if (patch.type !== undefined) {
+    sets.push("type = ?");
+    args.push(patch.type);
+  }
+  if (patch.description !== undefined) {
+    sets.push("description = ?");
+    args.push(patch.description?.trim() || null);
+  }
+  if (sets.length === 0) return;
+  args.push(id);
+  await db.run(`UPDATE tournaments SET ${sets.join(", ")} WHERE id = ?`, args);
 }
 
 export async function updateTournamentSettings(
@@ -461,6 +411,15 @@ export async function setTournamentAdmin(id: number, adminId: number | null): Pr
 export async function deleteTournament(id: number): Promise<void> {
   const db = await getDb();
   await db.run("DELETE FROM tournaments WHERE id = ?", [id]);
+}
+
+export async function wipeAllData(): Promise<void> {
+  const db = await getDb();
+  await db.run("DELETE FROM pairings");
+  await db.run("DELETE FROM rounds");
+  await db.run("DELETE FROM players");
+  await db.run("DELETE FROM tournaments");
+  await db.run("DELETE FROM admins WHERE is_super = 0");
 }
 
 // ---------- players ----------
